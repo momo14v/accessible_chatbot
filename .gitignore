@@ -1,1 +1,13 @@
 CONCEPT.md
+
+# Editor- und Werkzeug-Konfiguration (rechnerspezifisch)
+/.idea/
+/.claude/
+
+# Composer-Artefakte
+/vendor/
+composer.lock
+
+# Editor-Zwischendateien
+*.swp
+*~

@@ -1,0 +1,11 @@
+categories:
+  accessiblechatbot:
+    label: 'Barrierefreier Chatbot'
+
+settings:
+  accessiblechatbot.enabled:
+    label: 'Chatbot aktivieren'
+    description: 'Blendet das Chat-Widget im Frontend dieser Website ein. Solange die Einstellung aus ist, wird weder Markup noch CSS noch JavaScript ausgeliefert.'
+    category: accessiblechatbot
+    type: bool
+    default: false

@@ -1,0 +1,8 @@
+# EXT:accessible_chatbot - statisches TypoScript-Template
+#
+# Klassischer Einbindungsweg für Projekte ohne Site Sets (Konzept 4.3).
+# Das Site-Set-Gegenstück liegt in Configuration/Sets/AccessibleChatbot/.
+#
+# Phase 0: bewusst ohne jede Wirkung. Die Datei existiert, damit das statische
+# Template im sys_template-Datensatz ausgewählt werden kann.
+# Die Widget-Einbindung (page-Objekt, CSS, JavaScript) folgt in Phase 1.
