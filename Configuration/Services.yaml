@@ -1,0 +1,32 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+    public: false
+
+  Extension14v\AccessibleChatbot\:
+    resource: '../Classes/*'
+    exclude:
+      # Reine Datenklassen und Ausnahmen sind keine Services - sie werden
+      # mit "new" erzeugt und haben keine Abhaengigkeiten.
+      - '../Classes/Ai/AiProviderException.php'
+      - '../Classes/Ai/AiResult.php'
+      - '../Classes/Ai/ChatAction.php'
+      - '../Classes/Ai/ChatMessage.php'
+      - '../Classes/Ai/ChatRole.php'
+      - '../Classes/Ai/ProviderOptions.php'
+      - '../Classes/Configuration/ChatbotConfiguration.php'
+      - '../Classes/Http/ChatRequestPayload.php'
+      - '../Classes/Http/GenderStyle.php'
+      - '../Classes/Http/InvalidChatRequestException.php'
+
+  # Solange es nur einen Anbieter gibt, ist der Alias die einfachste Loesung.
+  # Kommt spaeter ein zweiter Adapter dazu, wird hier eine Factory eingetragen -
+  # ChatService, Middleware und Frontend bleiben unveraendert.
+  Extension14v\AccessibleChatbot\Ai\AiProviderInterface:
+    alias: Extension14v\AccessibleChatbot\Ai\GeminiProvider
+
+  # Muss oeffentlich sein: TYPO3s MiddlewareDispatcher holt die Middleware
+  # ueber $container->get(Klassenname) aus dem Container.
+  Extension14v\AccessibleChatbot\Middleware\ChatEndpointMiddleware:
+    public: true

@@ -1,0 +1,29 @@
+# EXT:accessible_chatbot - Konstanten fuer den klassischen Einbindungsweg
+#
+# ACHTUNG: Diese Datei wird NUR geladen, wenn das statische Template
+# "Barrierefreier Chatbot" in einem sys_template-Datensatz eingebunden ist.
+#
+# In TYPO3 stehen sys_template-Konstanten UEBER den Site Settings. Auf einer
+# Site, die das Site Set "Barrierefreier Chatbot" verwendet, wuerden die Werte
+# hier die Site Settings ueberschreiben. Deshalb gilt strikt:
+# pro Site ENTWEDER das Site Set ODER das statische Template - niemals beides.
+
+# customsubcategory=widget=Chat-Widget
+
+# cat=accessible chatbot/widget/010; type=boolean; label=Chatbot aktivieren: Blendet das Chat-Widget im Frontend ein.
+accessiblechatbot.enabled = 0
+
+# cat=accessible chatbot/widget/020; type=string; label=Name des Assistenten: Wird in der Kopfzeile und vor jeder Antwort angezeigt.
+accessiblechatbot.botName = Assistent
+
+# cat=accessible chatbot/widget/030; type=options[sie,du]; label=Anrede der Antworten: Wie der Assistent die Besucher anspricht.
+accessiblechatbot.salutation = sie
+
+# cat=accessible chatbot/widget/040; type=boolean; label=Automatisch navigieren: Auf ausdruecklichen Wunsch selbst zur Zielseite wechseln.
+accessiblechatbot.autoNavigate = 1
+
+# cat=accessible chatbot/widget/050; type=int+; label=Seite mit der Datenschutzerklaerung: Seiten-UID, 0 = kein Link.
+accessiblechatbot.privacyPageUid = 0
+
+# cat=accessible chatbot/widget/060; type=int+; label=Kontaktseite: Seiten-UID, 0 = keine Seite.
+accessiblechatbot.contactPageUid = 0

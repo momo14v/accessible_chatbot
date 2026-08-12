@@ -1,7 +1,7 @@
-# EXT:accessible_chatbot - statisches TypoScript-Template
+# EXT:accessible_chatbot - Site Set "Barrierefreier Chatbot"
 #
-# Klassischer Einbindungsweg fuer Projekte ohne Site Sets (Konzept 4.3).
-# Das Site-Set-Gegenstueck liegt in Configuration/Sets/AccessibleChatbot/.
+# TYPO3 laedt diese Datei automatisch, sobald die Site das Set
+# extension14v/accessible-chatbot in ihren dependencies auffuehrt.
 #
 # Die eigentliche Widget-Konfiguration steht nur EINMAL in Widget.typoscript
 # und wird von beiden Einbindungswegen geladen.

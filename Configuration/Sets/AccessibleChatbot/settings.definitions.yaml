@@ -9,3 +9,38 @@ settings:
     category: accessiblechatbot
     type: bool
     default: false
+
+  accessiblechatbot.botName:
+    label: 'Name des Assistenten'
+    description: 'Wird in der Kopfzeile des Chatfensters und vor jeder Antwort angezeigt.'
+    category: accessiblechatbot
+    type: string
+    default: 'Assistent'
+
+  accessiblechatbot.salutation:
+    label: 'Anrede der Antworten'
+    description: 'Erlaubte Werte: "sie" oder "du". Legt fest, wie der Assistent die Besucherinnen und Besucher anspricht.'
+    category: accessiblechatbot
+    type: string
+    default: 'sie'
+
+  accessiblechatbot.autoNavigate:
+    label: 'Automatisch navigieren'
+    description: 'Wenn aktiv, wechselt der Assistent auf ausdruecklichen Wunsch selbst zur gewuenschten Seite. Wenn aus, bietet er stattdessen nur einen Link an.'
+    category: accessiblechatbot
+    type: bool
+    default: true
+
+  accessiblechatbot.privacyPageUid:
+    label: 'Seite mit der Datenschutzerklaerung'
+    description: 'Wird als Link im Hinweistext des Chatfensters angezeigt. Keine Auswahl = kein Link.'
+    category: accessiblechatbot
+    type: page
+    default: 0
+
+  accessiblechatbot.contactPageUid:
+    label: 'Kontaktseite'
+    description: 'Fallback-Seite, auf die der Assistent verweist, wenn er etwas nicht weiss oder ein Fehler auftritt. Keine Auswahl = keine Seite.'
+    category: accessiblechatbot
+    type: page
+    default: 0

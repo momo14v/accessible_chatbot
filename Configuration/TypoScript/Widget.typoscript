@@ -1,0 +1,88 @@
+# EXT:accessible_chatbot - gemeinsame Widget-Einbindung
+#
+# Diese Datei wird von BEIDEN Einbindungswegen per @import geladen:
+#   - Site Set:            Configuration/Sets/AccessibleChatbot/setup.typoscript
+#   - statisches Template: Configuration/TypoScript/setup.typoscript
+# Dadurch gibt es genau eine Stelle, an der das Widget konfiguriert wird.
+#
+# Die Konstante accessiblechatbot.enabled kommt entweder aus den Site Settings
+# (Configuration/Sets/AccessibleChatbot/settings.definitions.yaml) oder aus
+# Configuration/TypoScript/constants.typoscript (klassischer Weg).
+#
+# WICHTIG - die Anfuehrungszeichen um die Konstante sind Absicht:
+# Ein ausgeschaltetes bool-Site-Setting wird in TYPO3 zu einer LEEREN Konstante,
+# nicht zu "0". Ohne Anfuehrungszeichen entstuende die ungueltige Bedingung
+# [ == 1], die TYPO3 bei jedem Seitenaufruf als Fehler protokollieren wuerde.
+
+["{$accessiblechatbot.enabled}" == "1"]
+
+page.9990 = FLUIDTEMPLATE
+page.9990 {
+    templateName = Widget
+    templateRootPaths.10 = EXT:accessible_chatbot/Resources/Private/Templates/
+
+    # Hinweis zu den Wahrheitswerten (enabled/autoNavigate):
+    # Ein ausgeschaltetes bool-Site-Setting wird zu einem LEEREN String,
+    # ein ausgeschalteter Constant-Editor-Wert dagegen zu "0". Im Markup
+    # steht deshalb je nach Einbindungsweg "", "0" oder "1".
+    # Regel fuer JavaScript und Fluid: immer streng auf "1" pruefen,
+    # niemals nur auf "wahrheitsartig" (=== '1', nicht if (wert)).
+    settings {
+        botName = {$accessiblechatbot.botName}
+        salutation = {$accessiblechatbot.salutation}
+        autoNavigate = {$accessiblechatbot.autoNavigate}
+        privacyPageUid = {$accessiblechatbot.privacyPageUid}
+        contactPageUid = {$accessiblechatbot.contactPageUid}
+    }
+
+    # Dynamische Werte gehoeren NICHT in "settings":
+    # der settings-Block von FLUIDTEMPLATE ist ein einfaches Array und kann
+    # kein stdWrap. "variables" dagegen versteht cObjects und stdWrap.
+    #
+    # Diese drei Werte schickt das JavaScript ab Phase 2 an den Server mit.
+    # Sie sind pro Seite und Sprache konstant, deshalb ist der normale
+    # Seiten-Cache voellig ausreichend (kein COA_INT noetig).
+    variables {
+        pageUid = TEXT
+        pageUid.data = page:uid
+        pageUid.intval = 1
+
+        languageUid = TEXT
+        languageUid.data = siteLanguage:languageId
+        languageUid.intval = 1
+
+        # Pfad-Anteil der TYPO3-Installation, z. B. "/" oder "/unterverzeichnis/".
+        # Daraus baut das JavaScript die Adresse des Chat-Endpunkts. Damit
+        # funktioniert der Chat auch in einer Installation im Unterverzeichnis.
+        #
+        # BEWUSST nur der Pfad und keine vollstaendige Adresse: eine absolute
+        # URL wird ins gecachte HTML geschrieben und wuerde bei mehreren
+        # Hostnamen (mit/ohne www, Staging-Alias) auf die falsche Herkunft
+        # zeigen - der Aufruf scheiterte dann an CORS oder CSP.
+        basePath = TEXT
+        basePath.data = getIndpEnv:TYPO3_SITE_PATH
+
+        # Fertige Adresse der Kontaktseite. Sie wird ausschliesslich hier auf
+        # dem Server erzeugt (TYPO3s Link-Erzeugung) - das JavaScript bastelt
+        # niemals selbst eine Adresse aus einer Seiten-Nummer.
+        # Ist keine Kontaktseite gesetzt, bleibt der Wert leer.
+        contactPageUrl = TEXT
+        contactPageUrl.if.isTrue = {$accessiblechatbot.contactPageUid}
+        contactPageUrl.typolink.parameter = {$accessiblechatbot.contactPageUid}
+        contactPageUrl.typolink.returnLast = url
+    }
+}
+
+page.includeCSS.accessibleChatbot = EXT:accessible_chatbot/Resources/Public/Css/chatbot.css
+
+page.includeJSFooter.accessibleChatbot = EXT:accessible_chatbot/Resources/Public/JavaScript/chatbot.js
+page.includeJSFooter.accessibleChatbot {
+    # Als ES-Modul ausliefern: <script type="module" src="..."></script>
+    type = module
+    # ES-Module duerfen nicht mit anderen JavaScript-Dateien zusammengefasst
+    # oder minimiert werden - beides wuerde das Modul zerstoeren.
+    excludeFromConcatenation = 1
+    disableCompression = 1
+}
+
+[GLOBAL]

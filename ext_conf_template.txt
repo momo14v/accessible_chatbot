@@ -1,0 +1,33 @@
+# EXT:accessible_chatbot - Betriebs-Einstellungen (Konzept Abschnitt 5)
+#
+# Diese Werte gelten fuer die GESAMTE Installation, nicht pro Website.
+# Darstellung und Verhalten des Widgets werden dagegen pro Website ueber die
+# Site Settings gepflegt (Configuration/Sets/AccessibleChatbot/).
+#
+# WICHTIG zum API-Key: ext_conf_template.txt kennt keinen Passwort-Typ. Der
+# Key stuende hier im Backend im Klartext. Besser ist die Umgebungsvariable
+# ACCESSIBLE_CHATBOT_API_KEY - sie hat Vorrang vor diesem Feld (siehe README).
+
+# customsubcategory=provider=KI-Anbieter
+# customsubcategory=limits=Nutzungsgrenzen
+
+# cat=accessible chatbot/provider/010; type=string; label=API-Key: Zugangsschluessel des KI-Anbieters. Leer lassen, wenn die Umgebungsvariable ACCESSIBLE_CHATBOT_API_KEY gesetzt ist - diese hat immer Vorrang.
+apiKey =
+
+# cat=accessible chatbot/provider/020; type=options[gemini]; label=Anbieter: Zurzeit wird nur "gemini" (Google Gemini API) unterstuetzt.
+provider = gemini
+
+# cat=accessible chatbot/provider/030; type=string; label=Modell: Name des Sprachmodells beim Anbieter. Modellnamen aendern sich, deshalb einstellbar.
+model = gemini-2.5-flash
+
+# cat=accessible chatbot/provider/040; type=string; label=API-Basis-URL: Leer lassen fuer den Standard des Anbieters. Nur fuer einen spaeter selbst betriebenen KI-Server noetig. Muss mit https:// beginnen (Ausnahme: localhost) - sonst wird der Wert ignoriert.
+apiBaseUrl =
+
+# cat=accessible chatbot/limits/010; type=int+; label=Anfragen pro Minute: Pro Besucher. 0 schaltet diese Grenze ab.
+rateLimitPerMinute = 8
+
+# cat=accessible chatbot/limits/020; type=int+; label=Anfragen pro Tag: Pro Besucher. 0 schaltet diese Grenze ab.
+rateLimitPerDay = 100
+
+# cat=accessible chatbot/limits/030; type=int+; label=Anfragen pro Tag insgesamt: Schuetzt das Kontingent des KI-Anbieters. 0 schaltet diese Grenze ab.
+rateLimitGlobalPerDay = 1000

@@ -1,0 +1,105 @@
+<html data-namespace-typo3-fluid="true"
+      xmlns:f="http://typo3.org/ns/TYPO3/CMS/Fluid/ViewHelpers">
+
+<div id="acb-widget" class="acb-widget" hidden
+     data-acb-auto-navigate="{settings.autoNavigate}"
+     data-acb-privacy-page="{settings.privacyPageUid}"
+     data-acb-contact-url="{contactPageUrl}"
+     data-acb-page-uid="{pageUid}"
+     data-acb-language-uid="{languageUid}"
+     data-acb-base-path="{basePath}">
+
+    <div id="acb-dialog" class="acb-dialog" role="dialog" hidden
+         aria-label="{f:translate(key: 'LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.dialog.label', arguments: {0: settings.botName})}">
+
+        <div class="acb-dialog__header">
+            <h2 class="acb-dialog__title">{settings.botName}</h2>
+            <button type="button" id="acb-close" class="acb-close">
+                <img class="acb-icon" src="{f:uri.resource(path: 'EXT:accessible_chatbot/Resources/Public/Icons/close.svg')}" width="24" height="24" alt="" />
+                <span class="acb-visually-hidden"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.close" /></span>
+            </button>
+        </div>
+
+        <p class="acb-intro">
+            <f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.transparency" />
+            <f:if condition="{settings.privacyPageUid} > 0">
+                <f:link.page pageUid="{settings.privacyPageUid}" class="acb-intro__link"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.privacy.link" /></f:link.page>
+            </f:if>
+        </p>
+
+        <div id="acb-log" class="acb-log" role="log" aria-live="polite" tabindex="0"
+             aria-label="{f:translate(key: 'LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.log.label')}">
+            <ul id="acb-log-list" class="acb-log__list" role="list">
+                <li class="acb-msg acb-msg--bot">
+                    <span class="acb-msg__sender"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:message.sender.bot" arguments="{0: settings.botName}" /></span>
+                    <span class="acb-msg__text"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:message.greeting" arguments="{0: settings.botName}" /></span>
+                </li>
+            </ul>
+        </div>
+
+        <p id="acb-status" class="acb-status" role="status" aria-live="polite"></p>
+
+        <form id="acb-form" class="acb-form" novalidate="novalidate">
+            <div class="acb-form__field">
+                <label class="acb-form__label" for="acb-input"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:form.input.label" /></label>
+                <input type="text" id="acb-input" class="acb-input" name="acb-message"
+                       maxlength="1000" autocomplete="off" enterkeyhint="send" />
+            </div>
+            <button type="button" id="acb-mic" class="acb-mic" aria-pressed="false"
+                    aria-describedby="acb-mic-hint" hidden>
+                <img class="acb-icon" src="{f:uri.resource(path: 'EXT:accessible_chatbot/Resources/Public/Icons/microphone.svg')}" width="24" height="24" alt="" />
+                <span class="acb-visually-hidden"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.label" /></span>
+            </button>
+            <button type="submit" id="acb-send" class="acb-send"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:form.send" /></button>
+        </form>
+
+        <p id="acb-mic-hint" class="acb-mic-hint" hidden><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.hint" /></p>
+
+        <fieldset class="acb-options">
+            <legend class="acb-options__legend"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.legend" /></legend>
+            <div class="acb-options__row">
+                <input type="radio" id="acb-gender-pair" name="acb-gender-style" value="pair" checked="checked" />
+                <label for="acb-gender-pair"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.pair" /></label>
+            </div>
+            <div class="acb-options__row">
+                <input type="radio" id="acb-gender-colon" name="acb-gender-style" value="colon" />
+                <label for="acb-gender-colon"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.colon" /></label>
+            </div>
+            <p class="acb-options__hint"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.hint" /></p>
+        </fieldset>
+    </div>
+
+    <button type="button" id="acb-toggle" class="acb-toggle" aria-expanded="false" aria-controls="acb-dialog">
+        <img class="acb-toggle__icon" src="{f:uri.resource(path: 'EXT:accessible_chatbot/Resources/Public/Icons/chat.svg')}" width="24" height="24" alt="" />
+        <span id="acb-toggle-label" class="acb-toggle__label"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.toggle.open" /></span>
+    </button>
+
+    <!--
+        Textbaustein-Block fuer das JavaScript.
+        <template> wird vom Browser NICHT angezeigt und landet nicht im
+        Accessibility-Baum. Das JavaScript liest hier alle Texte aus, damit
+        keine einzige Zeichenkette fest im JavaScript steht und alles
+        uebersetzbar bleibt. Fluid setzt Platzhalter wie %s bereits hier ein.
+    -->
+    <template id="acb-i18n">
+        <span data-acb-key="toggle.open"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.toggle.open" /></span>
+        <span data-acb-key="toggle.close"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.toggle.close" /></span>
+        <span data-acb-key="sender.user"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:message.sender.user" /></span>
+        <span data-acb-key="sender.bot"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:message.sender.bot" arguments="{0: settings.botName}" /></span>
+        <span data-acb-key="status.typing"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:status.typing" arguments="{0: settings.botName}" /></span>
+        <span data-acb-key="error.empty"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:error.empty" /></span>
+        <span data-acb-key="error.request"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:error.request" /></span>
+        <span data-acb-key="mic.listening"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.status.listening" /></span>
+        <span data-acb-key="mic.recognized"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.status.recognized" /></span>
+        <span data-acb-key="mic.stopped"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.status.stopped" /></span>
+        <span data-acb-key="mic.nospeech"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.status.nospeech" /></span>
+        <span data-acb-key="mic.denied"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.status.denied" /></span>
+        <span data-acb-key="mic.error"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.status.error" /></span>
+        <span data-acb-key="sender.system"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:message.sender.system" /></span>
+        <span data-acb-key="error.offline"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:error.offline" /></span>
+        <span data-acb-key="error.timeout"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:error.timeout" /></span>
+        <span data-acb-key="error.contactlink"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:error.contactlink" /></span>
+    </template>
+</div>
+
+</html>
