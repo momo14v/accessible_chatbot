@@ -21,3 +21,21 @@ $GLOBALS['TYPO3_CONF_VARS']['SYS']['caching']['cacheConfigurations']['accessible
     // trotzdem alles - das ist eine bewusste Handlung und akzeptabel.)
     'groups' => [],
 ];
+
+// ---------------------------------------------------------------------------
+// Inkrementelle Aktualisierung des Inhaltsindex (Konzept 4.4).
+//
+// TYPO3 13.4 bietet fuer diese beiden Zeitpunkte KEIN PSR-14-Event an - die
+// klassischen DataHandler-Hooks sind der einzige Weg.
+//
+// Beide Eintraege stehen bewusst nebeneinander an genau EINER Stelle: sollte
+// TYPO3 v14 hier Events einfuehren, wird nur dieser Block ersetzt.
+//
+// Warum zwei: Verstecken laeuft ueber die Datamap (ein Feldwert), Loeschen
+// und Verschieben ueber die Cmdmap (ein Befehl).
+// ---------------------------------------------------------------------------
+$GLOBALS['TYPO3_CONF_VARS']['SC_OPTIONS']['t3lib/class.t3lib_tcemain.php']['processDatamapClass']['accessible_chatbot']
+    = \Extension14v\AccessibleChatbot\Hook\IndexUpdateHook::class;
+
+$GLOBALS['TYPO3_CONF_VARS']['SC_OPTIONS']['t3lib/class.t3lib_tcemain.php']['processCmdmapClass']['accessible_chatbot']
+    = \Extension14v\AccessibleChatbot\Hook\IndexUpdateHook::class;

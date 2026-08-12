@@ -50,14 +50,22 @@ final class ConfigurationProvider
             $apiKey = self::string($raw, 'apiKey', '');
         }
 
+        // Ein sehr kleiner Wert waere praktisch immer ein Tippfehler und
+        // wuerde den Bot unbrauchbar machen - dann lieber der Standardwert.
+        $maxContentLength = self::int($raw, 'maxContentLength', 20000);
+        if ($maxContentLength < 1000) {
+            $maxContentLength = 20000;
+        }
+
         return new ChatbotConfiguration(
             $apiKey,
             self::string($raw, 'provider', 'gemini'),
-            self::string($raw, 'model', 'gemini-2.5-flash'),
+            self::string($raw, 'model', 'gemini-flash-latest'),
             self::baseUrl(self::string($raw, 'apiBaseUrl', '')),
             self::int($raw, 'rateLimitPerMinute', 8),
             self::int($raw, 'rateLimitPerDay', 100),
             self::int($raw, 'rateLimitGlobalPerDay', 1000),
+            $maxContentLength,
         );
     }
 

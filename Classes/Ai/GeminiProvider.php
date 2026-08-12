@@ -97,12 +97,19 @@ final class GeminiProvider implements AiProviderInterface
         ];
 
         if ($disableThinking) {
-            // Die Gemini-2.5-Modelle "denken" vor der Antwort, und diese
-            // Denk-Tokens zaehlen gegen maxOutputTokens. Ohne diese Angabe
-            // kann das Budget beim Denken aufgebraucht sein und die
-            // eigentliche Antwort leer bleiben (finishReason MAX_TOKENS).
-            // Fuer kurze, regelgebundene Antworten wird kein Denken gebraucht.
-            $generationConfig['thinkingConfig'] = ['thinkingBudget' => 0];
+            // Gemini-Modelle "denken" vor der Antwort, und diese Denk-Tokens
+            // zaehlen gegen maxOutputTokens. Ohne diese Angabe kann das Budget
+            // beim Denken aufgebraucht sein und die eigentliche Antwort leer
+            // bleiben (finishReason MAX_TOKENS). Fuer kurze, regelgebundene
+            // Antworten wird kein Denken gebraucht - das halbiert ausserdem
+            // die Antwortzeit.
+            //
+            // Achtung, der Parametername hat sich geaendert: der frueher
+            // uebliche "thinkingBudget" wird von der aktuellen
+            // Modellgeneration mit HTTP 400 abgelehnt. Sollte auch
+            // "thinkingLevel" einmal wegfallen, faengt das der einmalige
+            // Wiederholungsversuch in chat() ab.
+            $generationConfig['thinkingConfig'] = ['thinkingLevel' => 'minimal'];
         }
 
         $payload = [

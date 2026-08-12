@@ -1,0 +1,805 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Extension14v\AccessibleChatbot\Service;
+
+use Extension14v\AccessibleChatbot\Configuration\ConfigurationProvider;
+use Extension14v\AccessibleChatbot\Event\ModifyPageIndexRecordEvent;
+use Psr\EventDispatcher\EventDispatcherInterface;
+use Psr\Log\LoggerInterface;
+use TYPO3\CMS\Core\Context\Context;
+use TYPO3\CMS\Core\Context\DateTimeAspect;
+use TYPO3\CMS\Core\Context\LanguageAspect;
+use TYPO3\CMS\Core\Context\LanguageAspectFactory;
+use TYPO3\CMS\Core\Context\UserAspect;
+use TYPO3\CMS\Core\Context\VisibilityAspect;
+use TYPO3\CMS\Core\Context\WorkspaceAspect;
+use TYPO3\CMS\Core\Database\Connection;
+use TYPO3\CMS\Core\Database\ConnectionPool;
+use TYPO3\CMS\Core\Database\Query\Restriction\DeletedRestriction;
+use TYPO3\CMS\Core\Database\Query\Restriction\FrontendRestrictionContainer;
+use TYPO3\CMS\Core\Domain\Access\RecordAccessVoter;
+use TYPO3\CMS\Core\Domain\DateTimeFactory;
+use TYPO3\CMS\Core\Domain\Repository\PageRepository;
+use TYPO3\CMS\Core\Exception\SiteNotFoundException;
+use TYPO3\CMS\Core\Log\Channel;
+use TYPO3\CMS\Core\Site\Entity\Site;
+use TYPO3\CMS\Core\Site\Entity\SiteLanguage;
+use TYPO3\CMS\Core\Site\SiteFinder;
+use TYPO3\CMS\Core\Utility\GeneralUtility;
+
+/**
+ * Baut den Inhaltsindex auf (Konzept 4.4).
+ *
+ * SICHERHEITSKRITISCH. Der Bot darf ausschliesslich Inhalte kennen, die ein
+ * anonymer Besucher auch selbst sehen koennte. Deshalb gilt hier:
+ *
+ * 1. Es wird NIEMALS roh in "pages"/"tt_content" abgefragt, ohne dass eine
+ *    Core-Sichtbarkeitspruefung darueberliegt.
+ * 2. Der globale Context wird NICHT benutzt, sondern eine Kopie, in der jeder
+ *    relevante Aspekt bewusst neu gesetzt wird (siehe createContext()).
+ * 3. Geschrieben wird ausschliesslich per QueryBuilder in die EIGENE Tabelle -
+ *    niemals ueber den DataHandler, der sonst unseren eigenen Hook erneut
+ *    ausloesen und eine Endlosschleife erzeugen wuerde.
+ */
+final class IndexService
+{
+    public const TABLE = 'tx_accessiblechatbot_index';
+
+    /**
+     * Reihenfolge muss zur Reihenfolge in buildRows() passen.
+     */
+    private const COLUMNS = [
+        'pid',
+        'site_identifier',
+        'page_uid',
+        'language_uid',
+        'title',
+        'nav_title',
+        'abstract',
+        'keywords',
+        'content',
+        'fe_groups',
+        'updated_at',
+    ];
+
+    /**
+     * Seitentypen, die niemals besucher-sichtbaren Seiteninhalt tragen.
+     * Achtung: das ist ein Rausch-, kein Schutzfilter. Backend-Benutzer-
+     * bereiche (doktype 6) werden vom Core ohnehin schon ausgeschlossen.
+     */
+    private const EXCLUDED_DOKTYPES = [
+        PageRepository::DOKTYPE_BE_USER_SECTION,
+        PageRepository::DOKTYPE_SPACER,
+        PageRepository::DOKTYPE_SYSFOLDER,
+    ];
+
+    private const MAX_TREE_DEPTH = 99;
+    private const FALLBACK_MAX_CONTENT_LENGTH = 20000;
+    private const CHUNK_SIZE = 500;
+
+    /**
+     * Seitenbaum-Landkarte (uid => Zeile) fuer die Rootline-Pruefung.
+     * Wird pro Lauf einmal geladen.
+     *
+     * @var array<int, array<string, mixed>>|null
+     */
+    private ?array $pageTree = null;
+
+    public function __construct(
+        private readonly ConnectionPool $connectionPool,
+        private readonly SiteFinder $siteFinder,
+        private readonly EventDispatcherInterface $eventDispatcher,
+        private readonly ConfigurationProvider $configurationProvider,
+        private readonly RecordAccessVoter $accessVoter,
+        #[Channel('accessible_chatbot')]
+        private readonly LoggerInterface $logger,
+    ) {}
+
+    /**
+     * Voll-Reindex einer Website. Ersetzt den Bestand dieser Website atomar:
+     * Loeschen und Neuschreiben passieren in EINER Transaktion, es gibt also
+     * zu keinem Zeitpunkt einen leeren Zwischenzustand.
+     *
+     * Bewusst kein TRUNCATE: das ist auf MariaDB/MySQL nicht transaktional.
+     *
+     * @param \Closure(int, int): void|null $progress erhaelt (erledigt, gesamt)
+     * @return int Anzahl geschriebener Datensaetze
+     */
+    public function indexSite(Site $site, ?\Closure $progress = null): int
+    {
+        $pageUids = $this->collectSitePageUids($site);
+        $rows = $this->buildRows($site, $pageUids, $progress);
+
+        $connection = $this->connectionPool->getConnectionForTable(self::TABLE);
+        $connection->beginTransaction();
+        try {
+            $connection->delete(
+                self::TABLE,
+                ['site_identifier' => $site->getIdentifier()],
+                [Connection::PARAM_STR]
+            );
+            if ($rows !== []) {
+                $connection->bulkInsert(self::TABLE, $rows, self::COLUMNS);
+            }
+            $connection->commit();
+        } catch (\Throwable $exception) {
+            $connection->rollBack();
+
+            throw $exception;
+        }
+
+        return count($rows);
+    }
+
+    /**
+     * Entfernt Eintraege von Websites, die es nicht mehr gibt.
+     *
+     * @param list<string> $knownSiteIdentifiers
+     */
+    public function removeOrphanedSiteRows(array $knownSiteIdentifiers): int
+    {
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable(self::TABLE);
+        $queryBuilder->delete(self::TABLE);
+
+        if ($knownSiteIdentifiers !== []) {
+            $queryBuilder->where(
+                $queryBuilder->expr()->notIn(
+                    'site_identifier',
+                    $queryBuilder->createNamedParameter($knownSiteIdentifiers, Connection::PARAM_STR_ARRAY)
+                )
+            );
+        }
+
+        return (int)$queryBuilder->executeStatement();
+    }
+
+    /**
+     * Inkrementell: genau eine Seite neu bewerten (alle Sprachen ihrer Website).
+     */
+    public function refreshPage(int $pageUid): void
+    {
+        $this->pageTree = null;
+        $this->refresh([$pageUid], $pageUid);
+    }
+
+    /**
+     * Inkrementell: eine Seite UND ihren gesamten Unterbaum neu bewerten.
+     *
+     * Noetig, weil "extendToSubpages" die Sichtbarkeit aller Unterseiten
+     * mitbestimmt: wird eine Seite mit diesem Haken versteckt, verschwinden
+     * auch alle Unterseiten aus dem Frontend - und muessen deshalb auch aus
+     * dem Index verschwinden.
+     */
+    public function refreshPageTree(int $pageUid): void
+    {
+        $this->pageTree = null;
+        $this->refresh($this->collectSubtreeUids($pageUid), $pageUid);
+    }
+
+    /**
+     * @param list<int> $pageUids
+     */
+    private function refresh(array $pageUids, int $siteAnchorPageUid): void
+    {
+        $pageUids = array_values(array_unique(array_filter($pageUids)));
+        if ($pageUids === []) {
+            return;
+        }
+
+        try {
+            $site = $this->siteFinder->getSiteByPageId($siteAnchorPageUid);
+        } catch (SiteNotFoundException) {
+            // Seite geloescht oder ausserhalb jeder Website: nur aufraeumen.
+            $this->deleteByPageUids($pageUids);
+
+            return;
+        }
+
+        $rows = $this->buildRows($site, $pageUids);
+
+        $connection = $this->connectionPool->getConnectionForTable(self::TABLE);
+        $connection->beginTransaction();
+        try {
+            $this->deleteByPageUids($pageUids);
+            if ($rows !== []) {
+                $connection->bulkInsert(self::TABLE, $rows, self::COLUMNS);
+            }
+            $connection->commit();
+        } catch (\Throwable $exception) {
+            $connection->rollBack();
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * @param list<int> $pageUids
+     */
+    private function deleteByPageUids(array $pageUids): void
+    {
+        foreach (array_chunk($pageUids, self::CHUNK_SIZE) as $chunk) {
+            $queryBuilder = $this->connectionPool->getQueryBuilderForTable(self::TABLE);
+            $queryBuilder
+                ->delete(self::TABLE)
+                ->where(
+                    $queryBuilder->expr()->in(
+                        'page_uid',
+                        $queryBuilder->createNamedParameter($chunk, Connection::PARAM_INT_ARRAY)
+                    )
+                )
+                ->executeStatement();
+        }
+    }
+
+    /**
+     * Alle Seiten-UIDs einer Website, die ein anonymer Besucher erreichen kann.
+     *
+     * Kernstueck: getDescendantPageIdsRecursive() erledigt laut Core-Docblock
+     * genau das Schwierige - geloeschte Seiten, Backend-Benutzerbereiche und
+     * die komplette "extendToSubpages"-Vererbung. Diese Logik wird bewusst
+     * NICHT selbst nachgebaut.
+     *
+     * Die Startseite selbst liefert die Methode nicht mit, sie wird ergaenzt
+     * und in buildRows() genauso streng geprueft wie jede andere Seite.
+     *
+     * Startseiten anderer Websites werden ausgeschlossen: liegt eine Website
+     * im Seitenbaum einer anderen, wuerde ihr Unterbaum sonst doppelt und
+     * unter der falschen site_identifier landen.
+     *
+     * @return list<int>
+     */
+    private function collectSitePageUids(Site $site): array
+    {
+        $context = $this->createContext($site->getDefaultLanguage());
+        $pageRepository = GeneralUtility::makeInstance(PageRepository::class, $context);
+
+        $foreignRootPageIds = [];
+        foreach ($this->siteFinder->getAllSites() as $otherSite) {
+            if ($otherSite->getIdentifier() !== $site->getIdentifier()) {
+                $foreignRootPageIds[] = $otherSite->getRootPageId();
+            }
+        }
+
+        $descendants = $pageRepository->getDescendantPageIdsRecursive(
+            $site->getRootPageId(),
+            self::MAX_TREE_DEPTH,
+            0,
+            $foreignRootPageIds
+        );
+
+        return array_values(array_unique(array_merge([$site->getRootPageId()], $descendants)));
+    }
+
+    /**
+     * Seite plus kompletter Unterbaum - inklusive versteckter und geloeschter
+     * Seiten. Beide muessen mit, damit ihre Index-Eintraege verschwinden.
+     *
+     * @return list<int>
+     */
+    private function collectSubtreeUids(int $pageUid): array
+    {
+        $uids = [$pageUid];
+        $level = [$pageUid];
+        $depth = 0;
+
+        while ($level !== [] && $depth < self::MAX_TREE_DEPTH) {
+            $next = [];
+            foreach (array_chunk($level, self::CHUNK_SIZE) as $chunk) {
+                $queryBuilder = $this->connectionPool->getQueryBuilderForTable('pages');
+                $queryBuilder->getRestrictions()->removeAll();
+                $found = $queryBuilder
+                    ->select('uid')
+                    ->from('pages')
+                    ->where(
+                        $queryBuilder->expr()->in(
+                            'pid',
+                            $queryBuilder->createNamedParameter($chunk, Connection::PARAM_INT_ARRAY)
+                        ),
+                        $queryBuilder->expr()->eq(
+                            'sys_language_uid',
+                            $queryBuilder->createNamedParameter(0, Connection::PARAM_INT)
+                        )
+                    )
+                    ->executeQuery()
+                    ->fetchFirstColumn();
+
+                foreach ($found as $foundUid) {
+                    $next[] = (int)$foundUid;
+                }
+            }
+
+            // Schleifenschutz gegen kaputte pid-Verkettungen.
+            $next = array_values(array_diff(array_unique($next), $uids));
+            $uids = array_merge($uids, $next);
+            $level = $next;
+            $depth++;
+        }
+
+        return $uids;
+    }
+
+    /**
+     * Baut aus einer Liste von Seiten-UIDs die fertigen Index-Zeilen.
+     *
+     * @param list<int> $pageUids
+     * @param \Closure(int, int): void|null $progress
+     * @return list<list<mixed>>
+     */
+    private function buildRows(Site $site, array $pageUids, ?\Closure $progress = null): array
+    {
+        $languages = $site->getLanguages();
+        $maxContentLength = $this->maxContentLength();
+        $timestamp = (int)($GLOBALS['EXEC_TIME'] ?? time());
+        $hasNoIndexField = isset($GLOBALS['TCA']['pages']['columns']['no_index']);
+
+        $rows = [];
+        $done = 0;
+        $total = count($pageUids) * max(1, count($languages));
+
+        foreach ($languages as $language) {
+            $context = $this->createContext($language);
+            /** @var LanguageAspect $languageAspect */
+            $languageAspect = $context->getAspect('language');
+            $pageRepository = GeneralUtility::makeInstance(PageRepository::class, $context);
+
+            // Sichtbare Seiten in einem Rutsch holen und danach sprachlich
+            // ueberlagern. Deutlich weniger Abfragen als getPage() je Seite,
+            // aber exakt dieselben Core-Pruefungen.
+            $rowsByUid = [];
+            $visibleRows = $pageRepository->getPagesOverlay(
+                $this->fetchVisiblePageRows($pageUids, $context),
+                $languageAspect
+            );
+            foreach ($visibleRows as $visibleRow) {
+                $rowsByUid[(int)$visibleRow['uid']] = $visibleRow;
+            }
+
+            foreach ($pageUids as $pageUid) {
+                if ($progress !== null) {
+                    $progress($done, $total);
+                }
+                $done++;
+
+                $pageRow = $rowsByUid[$pageUid] ?? null;
+                if ($pageRow === null) {
+                    // Von enable-fields, fe_group oder Workspace ausgeschlossen.
+                    continue;
+                }
+
+                if (in_array((int)($pageRow['doktype'] ?? 0), self::EXCLUDED_DOKTYPES, true)) {
+                    continue;
+                }
+                if ((int)($pageRow['no_search'] ?? 0) === 1) {
+                    continue;
+                }
+                if ($hasNoIndexField && (int)($pageRow['no_index'] ?? 0) === 1) {
+                    continue;
+                }
+                if (!$pageRepository->isPageSuitableForLanguage($pageRow, $languageAspect)) {
+                    continue;
+                }
+
+                // Rootline-Pruefung: beim inkrementellen Update laeuft
+                // getDescendantPageIdsRecursive() nicht, deshalb hier erneut
+                // die eine Core-Regel anwenden, die "extendToSubpages" umsetzt.
+                $ancestors = $this->ancestorRows((int)($pageRow['pid'] ?? 0));
+                if (!$this->rootLineAccessGranted($ancestors, $context)) {
+                    continue;
+                }
+
+                $content = $this->cap(
+                    $this->collectPageContent($pageUid, $context, $languageAspect, $pageRepository),
+                    $maxContentLength
+                );
+
+                $abstract = trim((string)($pageRow['abstract'] ?? ''));
+                if ($abstract === '') {
+                    $abstract = trim((string)($pageRow['description'] ?? ''));
+                }
+
+                $record = [
+                    'pid' => 0,
+                    'site_identifier' => $site->getIdentifier(),
+                    'page_uid' => $pageUid,
+                    'language_uid' => $language->getLanguageId(),
+                    'title' => (string)($pageRow['title'] ?? ''),
+                    'nav_title' => (string)($pageRow['nav_title'] ?? ''),
+                    'abstract' => $abstract,
+                    'keywords' => trim((string)($pageRow['keywords'] ?? '')),
+                    'content' => $content,
+                    'fe_groups' => $this->collectFeGroups($pageRow, $ancestors),
+                    'updated_at' => $timestamp,
+                ];
+
+                $event = $this->eventDispatcher->dispatch(
+                    new ModifyPageIndexRecordEvent($record, $pageRow, $site, $language)
+                );
+                if ($event->isSkipped()) {
+                    continue;
+                }
+                $record = $event->getRecord();
+
+                // Nach dem Event erneut aufraeumen: ein Listener koennte
+                // beliebig langen oder unsauberen Text angehaengt haben.
+                $record['content'] = $this->cap(
+                    $this->normaliseWhitespace((string)($record['content'] ?? '')),
+                    $maxContentLength
+                );
+                $record['title'] = mb_substr((string)($record['title'] ?? ''), 0, 255);
+                $record['nav_title'] = mb_substr((string)($record['nav_title'] ?? ''), 0, 255);
+                $record['abstract'] = (string)($record['abstract'] ?? '');
+                $record['keywords'] = (string)($record['keywords'] ?? '');
+                $record['fe_groups'] = mb_substr((string)($record['fe_groups'] ?? ''), 0, 255);
+
+                // Zuordnung ist nicht verhandelbar - ein Listener darf einen
+                // Datensatz nicht einer anderen Website oder Seite unterschieben.
+                $record['pid'] = 0;
+                $record['site_identifier'] = $site->getIdentifier();
+                $record['page_uid'] = $pageUid;
+                $record['language_uid'] = $language->getLanguageId();
+                $record['updated_at'] = $timestamp;
+
+                $rows[] = [
+                    $record['pid'],
+                    $record['site_identifier'],
+                    $record['page_uid'],
+                    $record['language_uid'],
+                    $record['title'],
+                    $record['nav_title'],
+                    $record['abstract'],
+                    $record['keywords'],
+                    $record['content'],
+                    $record['fe_groups'],
+                    $record['updated_at'],
+                ];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Holt die Seitenzeilen der Standardsprache mit voller Frontend-Filterung.
+     *
+     * Der FrontendRestrictionContainer buendelt genau die Einschraenkungen,
+     * die auch im Frontend gelten: deleted, Workspace, hidden, starttime,
+     * endtime und fe_group.
+     *
+     * Der eigene Context MUSS uebergeben werden - ohne Argument faellt die
+     * Klasse still auf den globalen Context zurueck, und der zeigt im CLI
+     * versteckte Inhalte an.
+     *
+     * @param list<int> $pageUids
+     * @return list<array<string, mixed>>
+     */
+    private function fetchVisiblePageRows(array $pageUids, Context $context): array
+    {
+        $rows = [];
+        foreach (array_chunk($pageUids, self::CHUNK_SIZE) as $chunk) {
+            $queryBuilder = $this->connectionPool->getQueryBuilderForTable('pages');
+            $queryBuilder->setRestrictions(
+                GeneralUtility::makeInstance(FrontendRestrictionContainer::class, $context)
+            );
+            $result = $queryBuilder
+                ->select('*')
+                ->from('pages')
+                ->where(
+                    $queryBuilder->expr()->in(
+                        'uid',
+                        $queryBuilder->createNamedParameter($chunk, Connection::PARAM_INT_ARRAY)
+                    ),
+                    $queryBuilder->expr()->eq(
+                        'sys_language_uid',
+                        $queryBuilder->createNamedParameter(0, Connection::PARAM_INT)
+                    )
+                )
+                ->executeQuery()
+                ->fetchAllAssociative();
+
+            $rows = array_merge($rows, $result);
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Sammelt den Text der sichtbaren Inhaltselemente einer Seite.
+     *
+     * Die Sprachbehandlung ist bewusst 1:1 aus dem Core uebernommen:
+     * mit Overlays werden nur Sprache 0 und -1 geholt und danach ueberlagert,
+     * ohne Overlays ("free mode") direkt die Datensaetze der Zielsprache.
+     */
+    private function collectPageContent(
+        int $pageUid,
+        Context $context,
+        LanguageAspect $languageAspect,
+        PageRepository $pageRepository
+    ): string {
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('tt_content');
+        $queryBuilder->setRestrictions(
+            GeneralUtility::makeInstance(FrontendRestrictionContainer::class, $context)
+        );
+        $queryBuilder
+            ->select('*')
+            ->from('tt_content')
+            ->where(
+                $queryBuilder->expr()->eq(
+                    'pid',
+                    $queryBuilder->createNamedParameter($pageUid, Connection::PARAM_INT)
+                )
+            )
+            ->orderBy('colPos')
+            ->addOrderBy('sorting');
+
+        $languageIds = $languageAspect->doOverlays()
+            ? [0, -1]
+            : [$languageAspect->getContentId(), -1];
+        $queryBuilder->andWhere(
+            $queryBuilder->expr()->in(
+                'sys_language_uid',
+                $queryBuilder->createNamedParameter($languageIds, Connection::PARAM_INT_ARRAY)
+            )
+        );
+
+        $parts = [];
+        foreach ($queryBuilder->executeQuery()->fetchAllAssociative() as $row) {
+            if ($languageAspect->doOverlays()) {
+                $row = $pageRepository->getLanguageOverlay('tt_content', $row, $languageAspect);
+                if (!is_array($row) || $row === []) {
+                    // Strikte Sprachvariante ohne Uebersetzung: im Frontend
+                    // ebenfalls nicht sichtbar.
+                    continue;
+                }
+            }
+
+            // header_layout = 100 bedeutet "Ueberschrift verbergen" - der
+            // Besucher sieht sie nicht, also gehoert sie nicht in den Index.
+            if ((string)($row['header_layout'] ?? '0') !== '100') {
+                $parts[] = (string)($row['header'] ?? '');
+            }
+            $parts[] = (string)($row['subheader'] ?? '');
+            $parts[] = $this->htmlToText((string)($row['bodytext'] ?? ''));
+        }
+
+        $parts = array_filter(
+            array_map(static fn(string $part): string => trim($part), $parts),
+            static fn(string $part): bool => $part !== ''
+        );
+
+        return $this->normaliseWhitespace(implode("\n", $parts));
+    }
+
+    /**
+     * Macht aus HTML lesbaren Text.
+     *
+     * Wichtig: Blockelemente muessen zu Zeilenumbruechen werden. Sonst wuerde
+     * aus "<li>Montag</li><li>Dienstag</li>" das Wort "MontagDienstag".
+     */
+    private function htmlToText(string $html): string
+    {
+        if (trim($html) === '') {
+            return '';
+        }
+
+        // 1. Skript- und Style-Bloecke samt Inhalt verwerfen.
+        $text = (string)preg_replace('#<(script|style)\b[^>]*>.*?</\1\s*>#is', ' ', $html);
+
+        // 2. Zeilenumbrueche und Blockelemente werden zu echten Umbruechen.
+        $text = (string)preg_replace('#<br\s*/?>#i', "\n", $text);
+        $text = (string)preg_replace(
+            '#</?(p|div|li|ul|ol|dl|dd|dt|h[1-6]|tr|table|thead|tbody|tfoot|section'
+            . '|article|header|footer|aside|blockquote|pre|figure|figcaption|address|hr)\b[^>]*>#i',
+            "\n",
+            $text
+        );
+
+        // 3. Tabellenzellen nur trennen, nicht umbrechen.
+        $text = (string)preg_replace('#</?(td|th)\b[^>]*>#i', ' ', $text);
+
+        // 4. Restliche Tags entfernen, HTML-Entities aufloesen.
+        $text = strip_tags($text);
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        return $this->normaliseWhitespace($text);
+    }
+
+    private function normaliseWhitespace(string $text): string
+    {
+        $text = str_replace(["\r\n", "\r", "\xC2\xA0"], ["\n", "\n", ' '], $text);
+        $text = (string)preg_replace('/[ \t]+/', ' ', $text);
+        $text = (string)preg_replace('/ *\n */', "\n", $text);
+        $text = (string)preg_replace('/\n{3,}/', "\n\n", $text);
+
+        return trim($text);
+    }
+
+    /**
+     * Kappt auf die konfigurierte Laenge, moeglichst an einer Wortgrenze.
+     */
+    private function cap(string $text, int $maxLength): string
+    {
+        if ($maxLength <= 0 || mb_strlen($text) <= $maxLength) {
+            return $text;
+        }
+
+        $cut = mb_substr($text, 0, $maxLength);
+        $lastSpace = mb_strrpos($cut, ' ');
+        if ($lastSpace !== false && $lastSpace > (int)($maxLength * 0.9)) {
+            $cut = mb_substr($cut, 0, $lastSpace);
+        }
+
+        return rtrim($cut);
+    }
+
+    private function maxContentLength(): int
+    {
+        $configured = $this->configurationProvider->get()->maxContentLength;
+
+        return $configured > 0 ? $configured : self::FALLBACK_MAX_CONTENT_LENGTH;
+    }
+
+    /**
+     * Die Vorfahren einer Seite, von der direkten Elternseite aufwaerts.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function ancestorRows(int $parentPageUid): array
+    {
+        $map = $this->pageTreeMap();
+        $rows = [];
+        $seen = [];
+        $current = $parentPageUid;
+        $depth = 0;
+
+        while ($current > 0 && $depth < self::MAX_TREE_DEPTH) {
+            if (!isset($map[$current]) || isset($seen[$current])) {
+                break;
+            }
+            $seen[$current] = true;
+            $rows[] = $map[$current];
+            $current = (int)$map[$current]['pid'];
+            $depth++;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Eine kompakte Landkarte des gesamten Seitenbaums.
+     *
+     * Bewusst OHNE enable-fields: wir muessen versteckte Vorfahren SEHEN
+     * koennen, um zu erkennen, dass sie ihren Unterbaum mitverstecken.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function pageTreeMap(): array
+    {
+        if ($this->pageTree !== null) {
+            return $this->pageTree;
+        }
+
+        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('pages');
+        $queryBuilder->getRestrictions()
+            ->removeAll()
+            ->add(GeneralUtility::makeInstance(DeletedRestriction::class));
+
+        $result = $queryBuilder
+            ->select('uid', 'pid', 'fe_group', 'extendToSubpages', 'hidden', 'starttime', 'endtime')
+            ->from('pages')
+            ->where(
+                $queryBuilder->expr()->eq(
+                    'sys_language_uid',
+                    $queryBuilder->createNamedParameter(0, Connection::PARAM_INT)
+                )
+            )
+            ->executeQuery();
+
+        $map = [];
+        while ($row = $result->fetchAssociative()) {
+            $map[(int)$row['uid']] = $row;
+        }
+
+        return $this->pageTree = $map;
+    }
+
+    /**
+     * Setzt genau die Core-Regel um, die "extendToSubpages" ausmacht:
+     * nur wenn der Haken gesetzt ist, gelten hidden/starttime/endtime/fe_group
+     * der Elternseite auch fuer alle Unterseiten.
+     *
+     * Bewusst nachgebaut statt RecordAccessVoter::accessGrantedForPageInRootLine()
+     * aufzurufen - die Methode ist @internal. accessGranted() ist es nicht.
+     *
+     * @param list<array<string, mixed>> $ancestors
+     */
+    private function rootLineAccessGranted(array $ancestors, Context $context): bool
+    {
+        foreach ($ancestors as $ancestor) {
+            if (!($ancestor['extendToSubpages'] ?? false)) {
+                continue;
+            }
+            if (!$this->accessVoter->accessGranted('pages', $ancestor, $context)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Alle Zugriffsgruppen, die fuer diese Seite gelten: die eigene plus die
+     * der Vorfahren mit "extendToSubpages".
+     *
+     * In Phase 3 filtert dieses Feld noch nichts - es wird nur befuellt.
+     * Die spaetere Regel lautet: ein Eintrag ist fuer eine Person sichtbar,
+     * wenn JEDER Wert in fe_groups zu ihren Gruppen gehoert. Fuer anonyme
+     * Besucher sind das [0, -1].
+     *
+     * @param array<string, mixed> $pageRow
+     * @param list<array<string, mixed>> $ancestors
+     */
+    private function collectFeGroups(array $pageRow, array $ancestors): string
+    {
+        $groups = GeneralUtility::trimExplode(',', (string)($pageRow['fe_group'] ?? ''), true);
+
+        foreach ($ancestors as $ancestor) {
+            if (!($ancestor['extendToSubpages'] ?? false)) {
+                continue;
+            }
+            foreach (GeneralUtility::trimExplode(',', (string)($ancestor['fe_group'] ?? ''), true) as $group) {
+                $groups[] = $group;
+            }
+        }
+
+        $groups = array_values(array_unique(array_filter(
+            $groups,
+            static fn(string $group): bool => $group !== '' && $group !== '0'
+        )));
+        sort($groups);
+
+        return mb_substr(implode(',', $groups), 0, 255);
+    }
+
+    /**
+     * Der Context fuer alle Sichtbarkeitsentscheidungen.
+     *
+     * ACHTUNG, hier haengt die gesamte Sicherheit dieser Extension dran:
+     *
+     * - Im CLI stellt TYPO3 den globalen Context auf
+     *   VisibilityAspect(true, true, false, true), also "zeige versteckte
+     *   Seiten UND versteckte Inhalte UND ignoriere Start-/Endzeiten"
+     *   (CommandApplication::initializeContext(), am Core verifiziert).
+     *   Wuerden wir den globalen Context benutzen, landeten genau die
+     *   versteckten Inhalte im Index, die der Bot niemals kennen darf.
+     * - Im Backend (DataHandler-Hook) haengt am globalen Context ausserdem der
+     *   Arbeitsbereich der Redaktion.
+     * - Der Default-UserAspect liefert eine LEERE Gruppenliste, nicht [0, -1].
+     *   Seiten mit fe_group = -1 ("bei Login verbergen") sind fuer anonyme
+     *   Besucher aber sichtbar.
+     *
+     * Deshalb: den globalen Context klonen und danach JEDEN relevanten Aspekt
+     * bewusst neu setzen. Der Singleton selbst wird nie veraendert.
+     *
+     * Der Indexer arbeitet bewusst IMMER als anonymer Besucher. Seiten mit
+     * Zugriffsgruppe kommen dadurch gar nicht erst in den Index (Konzept 3.4
+     * und 11: keine personalisierten Inhalte fuer eingeloggte Nutzer in v1).
+     */
+    private function createContext(SiteLanguage $language): Context
+    {
+        $context = clone GeneralUtility::makeInstance(Context::class);
+
+        $context->setAspect(
+            'date',
+            new DateTimeAspect(DateTimeFactory::createFromTimestamp((int)($GLOBALS['EXEC_TIME'] ?? time())))
+        );
+        $context->setAspect('visibility', new VisibilityAspect());
+        $context->setAspect('workspace', new WorkspaceAspect(0));
+        $context->setAspect('backend.user', new UserAspect());
+        $context->setAspect('frontend.user', new UserAspect(null, [0, -1]));
+        $context->setAspect('language', LanguageAspectFactory::createFromSiteLanguage($language));
+
+        return $context;
+    }
+}

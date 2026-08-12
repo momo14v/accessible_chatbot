@@ -4,7 +4,7 @@ Ein barrierefreier Chatbot für TYPO3, der Fragen ausschließlich aus den sichtb
 
 ## Status
 
-Version 0.3.0 - in Entwicklung (Phase 2 von 7). Das barrierefreie Chat-Widget ist vorhanden und beantwortet Fragen über die Google-Gemini-API. Der Bot kennt die Inhalte dieser Website noch **nicht** - er sagt das auf Nachfrage ehrlich. Der Zugriff auf Website-Inhalte und die Navigation folgen in den Phasen 3 bis 5.
+Version 0.4.0 - in Entwicklung (Phase 3 von 7). Das barrierefreie Chat-Widget ist vorhanden und beantwortet Fragen über die Google-Gemini-API. Seit Phase 3 gibt es zusätzlich einen Inhaltsindex: der sichtbare Text der Website liegt strukturiert in der Datenbank und wird automatisch aktuell gehalten. **Der Chat greift darauf noch nicht zu** - der Bot sagt auf Inhaltsfragen weiterhin ehrlich, dass er die Website-Inhalte noch nicht kennt. Die Verbindung von Index und Chat folgt in Phase 4, die Navigation in Phase 5.
 
 ## Voraussetzungen
 
@@ -143,11 +143,34 @@ Backend-Redakteure mit Admin-Rechten hat, sollte Weg 1 wählen.
 | --- | --- | --- |
 | `apiKey` | leer | Zugangsschlüssel. Umgebungsvariable hat Vorrang. |
 | `provider` | `gemini` | Zurzeit wird nur Gemini unterstützt. |
-| `model` | `gemini-2.5-flash` | Modellname beim Anbieter. |
+| `model` | `gemini-flash-latest` | Modellname beim Anbieter. Siehe Hinweis unten. |
 | `apiBaseUrl` | leer | Nur für einen später selbst betriebenen KI-Server. |
 | `rateLimitPerMinute` | 8 | Anfragen pro Minute je Besucher. 0 = aus. |
 | `rateLimitPerDay` | 100 | Anfragen pro Tag je Besucher. 0 = aus. |
 | `rateLimitGlobalPerDay` | 1000 | Anfragen pro Tag insgesamt. 0 = aus. |
+
+### Hinweis zum Modellnamen
+
+Google benennt Modelle regelmäßig um und sperrt ältere Versionen irgendwann für
+neu erstellte Zugänge. Eine fest angegebene Version wie `gemini-2.5-flash`
+funktioniert dann für bestehende Zugänge weiter, liefert für neue Schlüssel aber
+`HTTP 404` - der Chat meldet in dem Fall "Der Assistent ist gerade nicht
+erreichbar", und im TYPO3-Log steht `AI service answered with HTTP status 404`.
+
+Deshalb ist `gemini-flash-latest` voreingestellt: dieser Name wächst mit und
+zeigt immer auf das aktuelle Flash-Modell. Wer stattdessen eine feste Version
+möchte (etwa um das Antwortverhalten stabil zu halten), muss den Namen bei
+Modellwechseln selbst pflegen.
+
+Welche Modelle der eigene Schlüssel benutzen darf, verrät diese Adresse - der
+Schlüssel gehört dabei in den Header `x-goog-api-key`, nicht in die URL:
+
+```
+https://generativelanguage.googleapis.com/v1beta/models
+```
+
+Ein sparsameres Modell für sehr einfache Anwendungsfälle ist
+`gemini-flash-lite-latest`.
 
 ## Schutz vor Missbrauch (Rate-Limits)
 
@@ -170,6 +193,143 @@ Maintenance, **Analyze Database Structure** ausführen und die vorgeschlagenen
 `[SYS][reverseProxyIP]` sieht TYPO3 nur die IP des Proxys - dann teilen sich
 alle Besucher ein einziges Kontingent. Diese Einstellung gehört in die
 Installations-Konfiguration und muss dort passend gesetzt werden.
+
+## Inhaltsindex
+
+Damit der Chatbot später Fragen aus den Inhalten dieser Website beantworten
+kann, wird der sichtbare Text aller Seiten in eine eigene Tabelle geschrieben:
+`tx_accessiblechatbot_index`.
+
+**Warum ein eigener Index und keine direkte Datenbankabfrage?** Eine rohe
+Abfrage würde TYPO3s Sichtbarkeitsregeln umgehen. Der Bot könnte dann
+versteckte, zeitgesteuerte oder zugriffsgeschützte Inhalte ausplaudern. Der
+Index wird deshalb ausschließlich über TYPO3-Kernfunktionen aufgebaut, und
+zwar genau so, wie ein **anonymer Besucher** die Website sieht.
+
+**Nicht aufgenommen werden:**
+
+- versteckte Seiten und versteckte Inhaltselemente,
+- Seiten und Elemente, deren Start- oder Enddatum gerade nicht passt,
+- Seiten mit gesetzter Zugriffsgruppe (Login-Bereiche),
+- alles unterhalb einer Seite, die ihre Einschränkungen per
+  "Für Unterseiten übernehmen" (`extendToSubpages`) vererbt,
+- Systemordner, Trenner und Backend-Benutzerbereiche,
+- Seiten mit dem Haken "In Suche ausschließen" (`no_search`),
+- Seiten mit "noindex" (nur wenn EXT:seo installiert ist),
+- Inhalte im Arbeitsbereich (Workspace) - der Index kennt nur "Live".
+
+### Einmalig nach der Aktualisierung nötig
+
+TYPO3-Backend, dann Admin Tools, Maintenance, **Analyze Database Structure**
+ausführen und die vorgeschlagenen Änderungen übernehmen. Dabei entsteht die
+Tabelle `tx_accessiblechatbot_index`.
+
+### Index aufbauen
+
+Im Hauptverzeichnis der TYPO3-Installation:
+
+```
+ddev exec typo3/sysext/core/bin/typo3 accessible-chatbot:index
+```
+
+Nur eine bestimmte Website:
+
+```
+ddev exec typo3/sysext/core/bin/typo3 accessible-chatbot:index --site=osm
+```
+
+Ohne DDEV entfällt jeweils das vorangestellte `ddev exec`.
+
+Der Befehl ist beliebig oft wiederholbar. Je Website wird der alte Bestand in
+einer einzigen Datenbank-Transaktion durch den neuen ersetzt - es gibt also
+nie einen Moment, in dem der Index leer wäre.
+
+### Automatische Aktualisierung beim Bearbeiten
+
+Wird im Backend eine Seite oder ein Inhaltselement angelegt, geändert,
+versteckt, verschoben oder gelöscht, wird die betroffene Seite sofort neu
+indexiert. Bei Änderungen an einer Seite, die auch Unterseiten betreffen
+können (verstecken, Datum, Zugriffsgruppe, verschieben, löschen), wird der
+gesamte Unterbaum neu bewertet.
+
+**Ausnahme:** Beim **Kopieren** von Seiten oder Inhaltselementen wird der
+Index nicht sofort aktualisiert. Die Kopie erscheint, sobald sie einmal
+gespeichert wird - spätestens beim nächtlichen Voll-Reindex.
+
+### Nächtlicher Reindex einrichten (dringend empfohlen)
+
+Es gibt einen Fall, den kein Automatismus abfangen kann: **zeitgesteuerte
+Sichtbarkeit**. Läuft das Enddatum einer Seite um 14:00 Uhr ab, speichert
+niemand etwas im Backend - es passiert schlicht nichts, was ein Programm
+bemerken könnte. Nur ein regelmäßiger kompletter Neuaufbau hält den Index
+dann korrekt.
+
+TYPO3 kann CLI-Befehle direkt als Scheduler-Aufgabe ausführen; ein eigener
+Aufgabentyp ist nicht nötig.
+
+1. Systemerweiterung `scheduler` aktivieren, falls noch nicht geschehen
+   (Admin Tools, Extensions).
+2. TYPO3-Backend, dann **System**, dann **Scheduler**.
+3. Auf **+** (neue Aufgabe) klicken.
+4. Bei **Class** den Eintrag **Execute console commands** wählen.
+5. Bei **Type** **Recurring** wählen.
+6. Bei **Frequency** eine nächtliche Zeit eintragen, zum Beispiel
+   `0 3 * * *` (täglich um 3 Uhr morgens).
+7. Bei **Schedulable Command** den Eintrag **accessible-chatbot:index**
+   auswählen.
+8. Speichern.
+
+Zusätzlich muss der Scheduler selbst regelmäßig laufen. Auf einem normalen
+Server geschieht das über einen Cronjob, der
+`typo3/sysext/core/bin/typo3 scheduler:run` aufruft. Bei DDEV lässt sich die
+Aufgabe zum Testen im Scheduler-Modul über das Play-Symbol von Hand starten.
+
+### Geschützte Bereiche und eingeloggte Nutzer
+
+Seiten mit einer Zugriffsgruppe (Login-Bereiche) werden **gar nicht erst
+indexiert**. Der Chatbot kann sie deshalb weder erwähnen noch ansteuern -
+auch dann nicht, wenn jemand angemeldet ist.
+
+Das ist eine bewusste Entscheidung, und der Grund ist kein technischer:
+Um eine Frage zu beantworten, muss der Server den betreffenden Seitentext in
+die Anfrage an den KI-Dienst schreiben. Bei einem externen Anbieter verlassen
+diese Inhalte damit die eigene Infrastruktur. Für personenbezogene Daten aus
+geschützten Bereichen (Vertrags-, Konto-, Gesundheitsdaten) fehlt dafür die
+Grundlage: Für das kostenlose Gemini-Kontingent bietet Google keinen
+Auftragsverarbeitungsvertrag nach Art. 28 DSGVO an, und es liegt eine
+Drittlandübermittlung vor.
+
+Die Architektur bleibt dafür trotzdem offen: Die Spalte `fe_groups` der
+Index-Tabelle wird bereits jetzt mit den Zugriffsgruppen einer Seite
+(einschließlich der von übergeordneten Seiten geerbten) befüllt. Sobald ein
+**selbst betriebener KI-Server** eingesetzt wird - die Extension ist dafür
+über `AiProviderInterface` vorbereitet - verlassen die Inhalte die eigene
+Infrastruktur nicht mehr, und geschützte Bereiche für angemeldete Nutzende
+werden zu einer verantwortbaren Erweiterung. Nötig wären dann: der Indexer
+läuft mit den Gruppen des jeweiligen Zugriffs statt anonym, und die Abfrage
+filtert anhand der angemeldeten Sitzung (nicht anhand von Angaben aus dem
+Browser).
+
+### Erweiterungspunkt für Entwicklerinnen und Entwickler
+
+Vor dem Speichern jedes Datensatzes wird das PSR-14-Event
+`Extension14v\AccessibleChatbot\Event\ModifyPageIndexRecordEvent`
+ausgelöst. Damit lassen sich zusätzliche Inhalte (etwa News-Datensätze oder
+Plugin-Ausgaben) anhängen, ohne diese Extension zu ändern.
+
+**Achtung:** Alles, was dort angehängt wird, landet später im Prompt an den
+KI-Dienst. Es dürfen ausschließlich Inhalte angehängt werden, die ein
+anonymer Besucher auf dieser Seite auch selbst sehen könnte.
+
+### Offener Punkt für TYPO3 v14
+
+Die automatische Aktualisierung nutzt die klassischen DataHandler-Hooks
+`processDatamapClass` und `processCmdmapClass`. In TYPO3 13.4 gibt es für
+diese beiden Zeitpunkte nachweislich kein PSR-14-Event; die Hooks sind der
+einzige Weg. Ob TYPO3 v14 sie ersetzt oder entfernt, ist derzeit nicht
+abschließend geklärt. Die Registrierung steht deshalb bewusst an genau einer
+Stelle (`ext_localconf.php`) und ist dort leicht austauschbar. Diese Frage
+wird in Phase 7 (Kompatibilität) endgültig beantwortet.
 
 ## Datenschutz - Textbaustein für die Datenschutzerklärung
 
@@ -213,9 +373,14 @@ und Betreiber sind für die Prüfung selbst verantwortlich.
 | Beobachtung | Ursache und Abhilfe |
 | --- | --- |
 | "Der Assistent ist noch nicht eingerichtet." | Kein API-Key gesetzt, Key ungültig (HTTP 401/403) oder ein anderer `provider` als `gemini` eingetragen. |
+| Meldung "nicht erreichbar", im Log steht `HTTP status 404` | Der eingestellte Modellname existiert nicht (mehr) oder ist für neue Zugänge gesperrt. Siehe "Hinweis zum Modellnamen". |
 | Jede Nachricht endet mit "nicht erreichbar" | Admin Tools, Maintenance, Analyze Database Structure ausführen (Cache-Tabellen fehlen). Danach Admin Tools, Log prüfen. |
 | Im Browser erscheint ein CSP-Fehler | Ist eine Content Security Policy aktiv, muss `connect-src` mindestens `'self'` erlauben. |
 | Antwort dauert und bricht dann ab | Der Server wartet höchstens 30 Sekunden auf die KI. Muss er die Anfrage einmal wiederholen (bei bestimmten Modellen nötig), kommen bis zu 15 Sekunden dazu. Der Browser bricht nach 35 Sekunden ab. |
+| `accessible-chatbot:index` meldet "Table 'tx_accessiblechatbot_index' doesn't exist" | Admin Tools, Maintenance, **Analyze Database Structure** ausführen. |
+| Der Befehl meldet "Es ist keine Website konfiguriert" | Unter Site Management, Sites muss mindestens eine Website mit Startseite angelegt sein. |
+| Eine versteckte Seite steht trotzdem im Index | Erst prüfen, ob es wirklich dieselbe Seite ist (Übersetzungen sind eigene Datensätze). Dann `accessible-chatbot:index` erneut ausführen und Admin Tools, Log prüfen. |
+| Eine sichtbare Seite fehlt im Index | Häufigste Ursachen: Haken "In Suche ausschließen", Seitentyp Systemordner/Trenner, oder eine übergeordnete Seite mit "Für Unterseiten übernehmen" und Einschränkung. |
 
 ## Verhalten ohne JavaScript
 

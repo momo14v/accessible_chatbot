@@ -21,6 +21,7 @@ final readonly class ChatbotConfiguration
         public int $rateLimitPerMinute,
         public int $rateLimitPerDay,
         public int $rateLimitGlobalPerDay,
+        public int $maxContentLength,
     ) {}
 
     /**

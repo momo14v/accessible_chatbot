@@ -17,8 +17,8 @@ apiKey =
 # cat=accessible chatbot/provider/020; type=options[gemini]; label=Anbieter: Zurzeit wird nur "gemini" (Google Gemini API) unterstuetzt.
 provider = gemini
 
-# cat=accessible chatbot/provider/030; type=string; label=Modell: Name des Sprachmodells beim Anbieter. Modellnamen aendern sich, deshalb einstellbar.
-model = gemini-2.5-flash
+# cat=accessible chatbot/provider/030; type=string; label=Modell: Name des Sprachmodells beim Anbieter. Empfohlen ist der mitwachsende Name "gemini-flash-latest" - fest angegebene Versionen werden von Google nach einiger Zeit fuer neue Zugaenge gesperrt (HTTP 404).
+model = gemini-flash-latest
 
 # cat=accessible chatbot/provider/040; type=string; label=API-Basis-URL: Leer lassen fuer den Standard des Anbieters. Nur fuer einen spaeter selbst betriebenen KI-Server noetig. Muss mit https:// beginnen (Ausnahme: localhost) - sonst wird der Wert ignoriert.
 apiBaseUrl =
@@ -31,3 +31,8 @@ rateLimitPerDay = 100
 
 # cat=accessible chatbot/limits/030; type=int+; label=Anfragen pro Tag insgesamt: Schuetzt das Kontingent des KI-Anbieters. 0 schaltet diese Grenze ab.
 rateLimitGlobalPerDay = 1000
+
+# customsubcategory=index=Inhaltsindex
+
+# cat=accessible chatbot/index/010; type=int+; label=Maximale Textlaenge je Seite: So viele Zeichen Seitentext werden hoechstens in den Index aufgenommen. Laengere Seiten werden an einer Wortgrenze gekappt. Werte unter 1000 werden ignoriert (dann gilt 20000).
+maxContentLength = 20000

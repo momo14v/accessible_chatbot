@@ -16,6 +16,7 @@ services:
       - '../Classes/Ai/ChatRole.php'
       - '../Classes/Ai/ProviderOptions.php'
       - '../Classes/Configuration/ChatbotConfiguration.php'
+      - '../Classes/Event/ModifyPageIndexRecordEvent.php'
       - '../Classes/Http/ChatRequestPayload.php'
       - '../Classes/Http/GenderStyle.php'
       - '../Classes/Http/InvalidChatRequestException.php'
@@ -29,4 +30,23 @@ services:
   # Muss oeffentlich sein: TYPO3s MiddlewareDispatcher holt die Middleware
   # ueber $container->get(Klassenname) aus dem Container.
   Extension14v\AccessibleChatbot\Middleware\ChatEndpointMiddleware:
+    public: true
+
+  # CLI-Befehl. Configuration/Commands.php ist seit TYPO3 v10.3 veraltet;
+  # nur ueber diesen Tag laesst sich "schedulable" steuern, das den Befehl
+  # im Scheduler auswaehlbar macht. Oeffentlich muss der Service hier nicht
+  # sein - das erledigt TYPO3s ConsoleCommandPass automatisch.
+  Extension14v\AccessibleChatbot\Command\IndexCommand:
+    tags:
+      - name: 'console.command'
+        command: 'accessible-chatbot:index'
+        description: 'Baut den Inhaltsindex des barrierefreien Chatbots neu auf.'
+        schedulable: true
+
+  # Muss oeffentlich sein: der DataHandler holt Hook-Objekte ueber
+  # GeneralUtility::makeInstance(). Die fragt den Container aber nur, wenn
+  # dieser den Dienst kennt - und Symfony kennt nur oeffentliche Dienste.
+  # Ohne "public: true" wuerde TYPO3 "new IndexUpdateHook()" ohne Argumente
+  # versuchen und bei jedem Speichern im Backend abstuerzen.
+  Extension14v\AccessibleChatbot\Hook\IndexUpdateHook:
     public: true
