@@ -6,7 +6,9 @@ namespace Extension14v\AccessibleChatbot\Ai;
 
 use Psr\Http\Client\ClientExceptionInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\Http\RequestFactory;
+use TYPO3\CMS\Core\Log\Channel;
 
 /**
  * Anbindung an die Google-Gemini-API (Konzept 6).
@@ -18,21 +20,64 @@ final class GeminiProvider implements AiProviderInterface
 {
     private const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
+    /**
+     * Gestufte Rueckfallkette: jede Stufe verzichtet auf einen weiteren,
+     * nicht zwingend benoetigten Bestandteil der Anfrage. So bleibt der Chat
+     * auch dann nutzbar, wenn ein Modellwechsel einen dieser Bestandteile
+     * nicht mehr erlaubt - notfalls eben ohne Quellenlinks.
+     *
+     * @var list<array{disableThinking: bool, includeSourceUids: bool}>
+     */
+    private const FALLBACK_ATTEMPTS = [
+        ['disableThinking' => true, 'includeSourceUids' => true],
+        ['disableThinking' => false, 'includeSourceUids' => true],
+        ['disableThinking' => false, 'includeSourceUids' => false],
+    ];
+
     public function __construct(
         private readonly RequestFactory $requestFactory,
+        #[Channel('accessible_chatbot')]
+        private readonly LoggerInterface $logger,
     ) {}
 
     public function chat(string $systemPrompt, array $messages, ProviderOptions $options): AiResult
     {
-        $response = $this->call($systemPrompt, $messages, $options, true);
-        $status = $response->getStatusCode();
+        $response = null;
+        $status = null;
 
-        // Nicht jedes Modell erlaubt es, das interne "Nachdenken" abzuschalten.
-        // Lehnt die API die Anfrage genau deshalb ab, wird sie einmal ohne
-        // diese Angabe wiederholt. Sonst wuerde ein im Backend geaenderter
+        // Review Phase 4, F4: EIN gemeinsames Zeitbudget fuer die gesamte
+        // Rueckfallkette. Sonst koennten drei Versuche zusammen laenger
+        // dauern als der Browser wartet (35 s), waehrend der PHP-Prozess
+        // trotzdem weiterlaeuft und Kontingent verbraucht.
+        $deadline = time() + $options->timeoutSeconds;
+        $lastAttemptIndex = count(self::FALLBACK_ATTEMPTS) - 1;
+
+        // Nicht jedes Modell erlaubt es, das interne "Nachdenken" abzuschalten,
+        // und nicht jedes Modell erlaubt "source_page_uids" im Schema. Lehnt
+        // die API eine Stufe deshalb mit HTTP 400 ab, wird die naechste,
+        // abgespeckte Stufe versucht. Sonst wuerde ein im Backend geaenderter
         // Modellname den Chat komplett lahmlegen.
-        if ($status === 400) {
-            // Grund der Ablehnung ansehen, statt blind zu wiederholen.
+        foreach (self::FALLBACK_ATTEMPTS as $index => $attempt) {
+            $remaining = $deadline - time();
+            if ($remaining < 5) {
+                break;
+            }
+
+            $response = $this->call(
+                $systemPrompt,
+                $messages,
+                $options,
+                $attempt['disableThinking'],
+                $attempt['includeSourceUids'],
+                $remaining
+            );
+            $status = $response->getStatusCode();
+
+            if ($status !== 400) {
+                break;
+            }
+
+            // Grund der Ablehnung ansehen, statt blind weiterzuprobieren.
             // Ausgelesen wird NUR das feste Statuswort der API - niemals
             // Freitext und niemals Nachrichteninhalte.
             $reason = $this->errorReason((string)$response->getBody());
@@ -45,8 +90,22 @@ final class GeminiProvider implements AiProviderInterface
                 );
             }
 
-            $response = $this->call($systemPrompt, $messages, $options, false);
-            $status = $response->getStatusCode();
+            // Review Phase 4, V5: bei der letzten Stufe gibt es keine weitere
+            // Stufe mehr, auf die "retrying" sich sinnvoll beziehen koennte.
+            if ($index < $lastAttemptIndex) {
+                // Review Phase 4, S5: eine dauerhaft abgelehnte Stufe kostet ab
+                // sofort JEDE Chat-Nachricht zwei bis drei API-Aufrufe statt
+                // einem - ohne dieses Protokoll wuerde das nie auffallen.
+                $this->logger->warning(
+                    'AI request rejected with HTTP 400 (reason: {reason}); retrying without {dropped}.',
+                    [
+                        'reason' => $reason !== '' ? $reason : 'unknown',
+                        'dropped' => $attempt['disableThinking'] ? 'thinkingConfig' : 'source_page_uids',
+                    ]
+                );
+            }
+
+            // Sonst: naechste, abgespeckte Stufe versuchen.
         }
 
         if ($status !== 200) {
@@ -73,23 +132,50 @@ final class GeminiProvider implements AiProviderInterface
      * @param ChatMessage[] $messages
      * @throws AiProviderException bei Netzwerkfehlern und Zeitueberschreitung
      */
-    private function call(string $systemPrompt, array $messages, ProviderOptions $options, bool $disableThinking): ResponseInterface
-    {
+    private function call(
+        string $systemPrompt,
+        array $messages,
+        ProviderOptions $options,
+        bool $disableThinking,
+        bool $includeSourceUids,
+        int $timeoutSeconds
+    ): ResponseInterface {
+        $properties = [
+            'reply' => ['type' => 'STRING'],
+            'action' => [
+                'type' => 'STRING',
+                'enum' => ['answer', 'navigate', 'clarify'],
+            ],
+            // Review Phase 4, S4: unabhaengig von "source_page_uids" und
+            // deshalb IMMER Teil des Schemas, auch im abgespeckten
+            // Rueckfallmodus ohne Quellenangaben - sonst waere "weiss ich
+            // nicht" in diesem Modus faelschlich an eine leere Quellenliste
+            // gekoppelt.
+            'answer_found' => ['type' => 'BOOLEAN'],
+            'target_page_uid' => ['type' => 'INTEGER'],
+        ];
+        $required = ['reply', 'action', 'answer_found'];
+
+        if ($includeSourceUids) {
+            // Quellseiten der Antwort (Konzept 4.5: Link zur Quellseite statt
+            // automatischer Navigation).
+            $properties['source_page_uids'] = [
+                'type' => 'ARRAY',
+                'items' => ['type' => 'INTEGER'],
+            ];
+            // Pflicht, damit das Modell den Schluessel immer liefert -
+            // notfalls als leere Liste.
+            $required[] = 'source_page_uids';
+        }
+
         $generationConfig = [
             // Structured Output: Gemini liefert damit garantiert JSON
             // in genau dieser Form - kein Herumraten beim Parsen.
             'responseMimeType' => 'application/json',
             'responseSchema' => [
                 'type' => 'OBJECT',
-                'properties' => [
-                    'reply' => ['type' => 'STRING'],
-                    'action' => [
-                        'type' => 'STRING',
-                        'enum' => ['answer', 'navigate', 'clarify'],
-                    ],
-                    'target_page_uid' => ['type' => 'INTEGER'],
-                ],
-                'required' => ['reply', 'action'],
+                'properties' => $properties,
+                'required' => $required,
             ],
             // Niedrige Temperatur = weniger Fantasie, mehr Regeltreue.
             'temperature' => 0.3,
@@ -107,8 +193,8 @@ final class GeminiProvider implements AiProviderInterface
             // Achtung, der Parametername hat sich geaendert: der frueher
             // uebliche "thinkingBudget" wird von der aktuellen
             // Modellgeneration mit HTTP 400 abgelehnt. Sollte auch
-            // "thinkingLevel" einmal wegfallen, faengt das der einmalige
-            // Wiederholungsversuch in chat() ab.
+            // "thinkingLevel" einmal wegfallen, faengt das die
+            // Rueckfallkette in chat() ab.
             $generationConfig['thinkingConfig'] = ['thinkingLevel' => 'minimal'];
         }
 
@@ -148,10 +234,10 @@ final class GeminiProvider implements AiProviderInterface
                         'x-goog-api-key' => $options->apiKey,
                     ],
                     'body' => $body,
-                    // Der Wiederholungsversuch bekommt weniger Zeit, damit
-                    // beide Aufrufe zusammen unter dem Zeitlimit des Browsers
-                    // (35 s) bleiben.
-                    'timeout' => $disableThinking ? $options->timeoutSeconds : max(10, $options->timeoutSeconds - 15),
+                    // Gemeinsames Zeitbudget der Rueckfallkette (siehe chat()) -
+                    // damit bleiben alle Versuche zusammen innerhalb des
+                    // Zeitlimits des Browsers (35 s).
+                    'timeout' => $timeoutSeconds,
                     'connect_timeout' => 10,
                     // Statuscodes selbst auswerten statt Ausnahmen zu fangen.
                     'http_errors' => false,
@@ -191,8 +277,9 @@ final class GeminiProvider implements AiProviderInterface
         ];
 
         foreach ($candidates as $candidate) {
-            if (is_string($candidate) && preg_match('/^[A-Z_]{1,40}$/', $candidate) === 1) {
-                return $candidate;
+            $word = self::statusWord($candidate);
+            if ($word !== '') {
+                return $word;
             }
         }
 
@@ -265,7 +352,51 @@ final class GeminiProvider implements AiProviderInterface
             trim($decoded['reply']),
             ChatAction::tryFrom(is_string($decoded['action'] ?? null) ? $decoded['action'] : '') ?? ChatAction::Answer,
             $targetPageUid > 0 ? $targetPageUid : null,
+            self::pageUidList($decoded['source_page_uids'] ?? null),
+            // Fehlt das Feld oder ist es kein Bool (Modell haelt sich nicht
+            // ans Schema), lieber KEINEN falschen "weiss ich nicht"-Hinweis
+            // zeigen als einen unbegruendeten (Review Phase 4, S4).
+            !is_bool($decoded['answer_found'] ?? null) || $decoded['answer_found'],
         );
+    }
+
+    /**
+     * Liest eine Liste von Seiten-UIDs aus der KI-Antwort.
+     *
+     * Hier wird NUR die Form geprueft (ganze Zahlen groesser 0), nicht die
+     * Berechtigung - die Whitelist-Pruefung gehoert in den ChatService.
+     *
+     * Review Phase 4, V3: es wird VOR der Zaehlpruefung dedupliziert. Sonst
+     * wuerde z. B. [7,7,7,7,7,7,7,7,7,7,12] bei der alten Reihenfolge
+     * (erst zehn kappen, dann deduplizieren) auf [7] statt auf [7, 12]
+     * schrumpfen.
+     *
+     * @return list<int>
+     */
+    private static function pageUidList(mixed $value): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $uids = [];
+        foreach ($value as $entry) {
+            if (!is_numeric($entry) || (int)$entry <= 0) {
+                continue;
+            }
+
+            $uid = (int)$entry;
+            if (in_array($uid, $uids, true)) {
+                continue;
+            }
+
+            $uids[] = $uid;
+            if (count($uids) >= 10) {
+                break;
+            }
+        }
+
+        return $uids;
     }
 
     private function endpoint(ProviderOptions $options): string

@@ -27,3 +27,6 @@ accessiblechatbot.privacyPageUid = 0
 
 # cat=accessible chatbot/widget/060; type=int+; label=Kontaktseite: Seiten-UID, 0 = keine Seite.
 accessiblechatbot.contactPageUid = 0
+
+# cat=accessible chatbot/widget/070; type=int+; label=Seitenliste vollstaendig bis: Ab dieser Anzahl indexierter Seiten bekommt der Assistent nur noch die oberen Ebenen des Seitenbaums (bis Ebene 2) statt der vollstaendigen Liste.
+accessiblechatbot.maxIndexPagesFullSitemap = 150

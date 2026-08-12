@@ -44,3 +44,10 @@ settings:
     category: accessiblechatbot
     type: page
     default: 0
+
+  accessiblechatbot.maxIndexPagesFullSitemap:
+    label: 'Seitenliste vollstaendig bis'
+    description: 'Ab dieser Anzahl indexierter Seiten bekommt der Assistent nur noch die oberen Ebenen des Seitenbaums (bis Ebene 2) statt der vollstaendigen Liste. Das haelt die Anfrage an den KI-Dienst klein und schnell.'
+    category: accessiblechatbot
+    type: int
+    default: 150

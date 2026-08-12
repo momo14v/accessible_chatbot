@@ -18,9 +18,12 @@ use TYPO3\CMS\Core\Site\Entity\SiteLanguage;
  * Prompt an die KI. Es duerfen ausschliesslich Inhalte angehaengt werden, die
  * ein anonymer Besucher auf dieser Seite auch selbst sehen koennte.
  *
- * Die Felder site_identifier, page_uid, language_uid, pid und updated_at
- * werden nach dem Event bewusst wieder ueberschrieben - ein Listener kann die
- * Zuordnung eines Datensatzes also nicht faelschen.
+ * Die Felder site_identifier, page_uid, language_uid, pid, fe_groups und
+ * updated_at werden nach dem Event bewusst wieder ueberschrieben - ein
+ * Listener kann weder die Zuordnung eines Datensatzes faelschen noch das
+ * Filterfeld fe_groups (Sichtbarkeitsgruppen) beeinflussen. title, nav_title,
+ * abstract, keywords und content werden nach dem Event lediglich erneut auf
+ * ihre maximale Laenge gekappt, ihr Inhalt bleibt sonst unangetastet.
  */
 final class ModifyPageIndexRecordEvent
 {

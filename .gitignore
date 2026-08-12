@@ -11,3 +11,5 @@ composer.lock
 # Editor-Zwischendateien
 *.swp
 *~
+
+test.txt

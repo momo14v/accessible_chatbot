@@ -78,6 +78,20 @@
     margin: 0;
 }
 
+/*
+ * Review Phase 4, V2: "color: inherit" oben hat die Spezifitaet 0-1-1
+ * (.acb-widget + Element "a") und schlaegt damit ".acb-msg__link" bzw.
+ * ".acb-intro__link" (jeweils 0-1-0) - die im Dateikopf dokumentierten
+ * Kontrastwerte fuer diese beiden Links trafen dadurch nicht zu, die Links
+ * erschienen in der geerbten Textfarbe #1b1b1b statt in #005a9c. Diese Regel
+ * (0-2-1) ist gezielt spezifischer und stellt die dokumentierte Farbe wieder
+ * her.
+ */
+.acb-widget a.acb-msg__link,
+.acb-widget a.acb-intro__link {
+    color: #005a9c;
+}
+
 .acb-widget button {
     margin: 0;
     padding: 0;
@@ -257,6 +271,41 @@
 .acb-msg__link {
     color: #005a9c;
     text-decoration: underline;
+}
+
+/*
+ * Quellenangabe unter einer Bot-Antwort.
+ *
+ * Die Angabe haengt nicht an der Farbe: sie hat einen eigenen sichtbaren
+ * Einleitungssatz und die Links sind unterstrichen (WCAG 1.4.1).
+ */
+.acb-msg__sources {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 0.0625rem solid #767676;
+}
+
+.acb-msg__sources-intro {
+    display: inline-block;
+    margin-bottom: 0.25rem;
+}
+
+.acb-msg__source-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/*
+ * Zielgroesse (WCAG 2.2, SC 2.5.8): der Link bekommt oben und unten
+ * Innenabstand, damit die anklickbare Flaeche mindestens 24 px hoch ist.
+ */
+.acb-msg__source-list .acb-msg__link {
+    display: inline-block;
+    padding-block: 0.25rem;
 }
 
 .acb-msg__sender {

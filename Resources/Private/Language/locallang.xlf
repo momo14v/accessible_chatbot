@@ -120,6 +120,15 @@
             <trans-unit id="error.forbidden">
                 <source>This request was not allowed. Please reload the page and try again.</source>
             </trans-unit>
+            <trans-unit id="message.sources.one">
+                <source>Link to read more:</source>
+            </trans-unit>
+            <trans-unit id="message.sources.many">
+                <source>Links to read more:</source>
+            </trans-unit>
+            <trans-unit id="message.contacthint">
+                <source>Maybe the contact page can help you:</source>
+            </trans-unit>
         </body>
     </file>
 </xliff>

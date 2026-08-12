@@ -29,5 +29,5 @@ CREATE TABLE tx_accessiblechatbot_index (
 
 	PRIMARY KEY (uid),
 	KEY page_language (page_uid,language_uid),
-	KEY site (site_identifier)
+	KEY site_language (site_identifier,language_uid)
 );

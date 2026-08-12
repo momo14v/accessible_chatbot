@@ -4,7 +4,7 @@ Ein barrierefreier Chatbot für TYPO3, der Fragen ausschließlich aus den sichtb
 
 ## Status
 
-Version 0.4.0 - in Entwicklung (Phase 3 von 7). Das barrierefreie Chat-Widget ist vorhanden und beantwortet Fragen über die Google-Gemini-API. Seit Phase 3 gibt es zusätzlich einen Inhaltsindex: der sichtbare Text der Website liegt strukturiert in der Datenbank und wird automatisch aktuell gehalten. **Der Chat greift darauf noch nicht zu** - der Bot sagt auf Inhaltsfragen weiterhin ehrlich, dass er die Website-Inhalte noch nicht kennt. Die Verbindung von Index und Chat folgt in Phase 4, die Navigation in Phase 5.
+Version 0.4.0 - in Entwicklung (Phase 4 von 7). Das barrierefreie Chat-Widget ist vorhanden und beantwortet Fragen über die Google-Gemini-API. Seit Phase 4 greift der Chat auf den Inhaltsindex zu: Der Bot beantwortet Fragen aus den tatsächlichen, sichtbaren Inhalten dieser Website und nennt zu jeder inhaltlich gestützten Antwort einen oder mehrere Links auf die verwendeten Seiten. Findet er keine passende Seite, sagt er das ehrlich und bietet - falls eingerichtet - die Kontaktseite an. Eine ausdrückliche Aufforderung zur Navigation ("bring mich zu ...") führt noch nicht automatisch zu einem Seitenwechsel; das folgt in Phase 5.
 
 ## Voraussetzungen
 
@@ -83,6 +83,30 @@ stillschweigend die Werte, die im Site-Settings-Formular eingetragen wurden - de
 Chatbot ließe sich dort dann scheinbar nicht mehr einschalten. Deshalb: pro Site
 entweder Weg A oder Weg B.
 
+### Wichtig bei Weg B: Botname, Anrede und Seitenliste in den KI-Antworten
+
+Für das, was der Assistent tatsächlich **sagt** - seinen Namen, die Anrede ("sie"
+oder "du") und wie lang die Seitenliste im Hintergrund werden darf, bevor sie
+gekürzt wird - liest der Server ausschließlich die **Site Settings** aus (also
+den Weg über das Site Set), unabhängig davon, welcher Einbindungsweg für das
+sichtbare Widget aktiv ist.
+
+Wer nur Weg B (klassisches statisches Template) benutzt, konfiguriert damit
+ausschließlich das **Erscheinungsbild** des Widgets im Frontend (Kopfzeile,
+Begrüßungstext). Die Werte aus dem Constant Editor wirken sich **nicht** auf
+den Systemprompt aus, den die KI erhält - dort bleiben `botName`, `salutation`
+und `maxIndexPagesFullSitemap` auf ihren Standardwerten ("Assistent", "sie",
+150), selbst wenn im Constant Editor etwas anderes eingetragen ist.
+
+**Pflicht, nicht nur Empfehlung:** der Chat-Endpunkt selbst liest die
+Einstellung "Chatbot aktivieren" ausschließlich aus den Site Settings. Fehlt
+der Site das Site Set "Barrierefreier Chatbot" komplett, kennt der Server
+diese Einstellung gar nicht und lehnt jede Anfrage sicherheitshalber ab (HTTP
+403) - unabhängig davon, was im Constant Editor von Weg B eingetragen ist. Der
+Site muss deshalb **immer zusätzlich** das Site Set "Barrierefreier Chatbot"
+zugewiesen werden, auch wenn sonst ausschließlich mit statischem TypoScript
+(Weg B) gearbeitet wird.
+
 ## Einstellungen
 
 | Einstellung | Standard | Zweck |
@@ -93,6 +117,7 @@ entweder Weg A oder Weg B.
 | `autoNavigate` | an | Auf ausdrücklichen Wunsch selbst zur Zielseite wechseln |
 | `privacyPageUid` | 0 | Seite mit der Datenschutzerklärung (0 = kein Link) |
 | `contactPageUid` | 0 | Kontaktseite als Fallback (0 = keine Seite) |
+| `maxIndexPagesFullSitemap` | 150 | Ab dieser Anzahl indexierter Seiten bekommt der Assistent nur noch die oberen Ebenen des Seitenbaums (bis Ebene 2) statt der vollständigen Seitenliste |
 
 Alle sichtbaren Texte liegen in `Resources/Private/Language/locallang.xlf`
 (englische Quelldatei) und `de.locallang.xlf` (deutsche Übersetzung) und lassen
@@ -148,6 +173,7 @@ Backend-Redakteure mit Admin-Rechten hat, sollte Weg 1 wählen.
 | `rateLimitPerMinute` | 8 | Anfragen pro Minute je Besucher. 0 = aus. |
 | `rateLimitPerDay` | 100 | Anfragen pro Tag je Besucher. 0 = aus. |
 | `rateLimitGlobalPerDay` | 1000 | Anfragen pro Tag insgesamt. 0 = aus. |
+| `maxContentLength` | 20000 | Maximale Zeichenzahl des indexierten Textes je Seite. Laengerer Text wird moeglichst an einer Wortgrenze abgeschnitten. |
 
 ### Hinweis zum Modellnamen
 
@@ -256,13 +282,27 @@ gesamte Unterbaum neu bewertet.
 Index nicht sofort aktualisiert. Die Kopie erscheint, sobald sie einmal
 gespeichert wird - spätestens beim nächtlichen Voll-Reindex.
 
-### Nächtlicher Reindex einrichten (dringend empfohlen)
+**Weitere Ausnahme:** Beim **Veröffentlichen eines Arbeitsbereichs
+(Workspace)** greift der Hook bewusst nicht - er reagiert nur auf
+Änderungen im Live-Arbeitsbereich. Veröffentlichte Inhalte erscheinen im
+Index deshalb erst beim nächsten Voll-Reindex.
+
+### Nächtlicher Reindex einrichten (Pflicht)
 
 Es gibt einen Fall, den kein Automatismus abfangen kann: **zeitgesteuerte
 Sichtbarkeit**. Läuft das Enddatum einer Seite um 14:00 Uhr ab, speichert
 niemand etwas im Backend - es passiert schlicht nichts, was ein Programm
 bemerken könnte. Nur ein regelmäßiger kompletter Neuaufbau hält den Index
 dann korrekt.
+
+Der Chat selbst prüft vor jeder Antwort zusätzlich gegen die aktuelle
+Sichtbarkeit - sowohl die höchstens fünf Treffer als auch die Seitenliste
+(Sitemap-Kompakt) im Hintergrund. Eine bereits abgelaufene Seite wird also
+weder in einer Antwort erwähnt noch taucht ihr Titel in der Seitenliste auf,
+die der KI mitgegeben wird. Ihr **Text** bleibt aber bis zum nächsten Reindex
+in der Index-Tabelle stehen und zählt dadurch weiterhin bei der Trefferauswahl
+mit, ohne selbst ausgegeben zu werden. Der nächtliche Voll-Reindex ist deshalb
+keine Empfehlung, sondern **zwingend einzurichten**.
 
 TYPO3 kann CLI-Befehle direkt als Scheduler-Aufgabe ausführen; ein eigener
 Aufgabentyp ist nicht nötig.
@@ -299,16 +339,17 @@ Grundlage: Für das kostenlose Gemini-Kontingent bietet Google keinen
 Auftragsverarbeitungsvertrag nach Art. 28 DSGVO an, und es liegt eine
 Drittlandübermittlung vor.
 
-Die Architektur bleibt dafür trotzdem offen: Die Spalte `fe_groups` der
-Index-Tabelle wird bereits jetzt mit den Zugriffsgruppen einer Seite
-(einschließlich der von übergeordneten Seiten geerbten) befüllt. Sobald ein
-**selbst betriebener KI-Server** eingesetzt wird - die Extension ist dafür
-über `AiProviderInterface` vorbereitet - verlassen die Inhalte die eigene
-Infrastruktur nicht mehr, und geschützte Bereiche für angemeldete Nutzende
-werden zu einer verantwortbaren Erweiterung. Nötig wären dann: der Indexer
-läuft mit den Gruppen des jeweiligen Zugriffs statt anonym, und die Abfrage
-filtert anhand der angemeldeten Sitzung (nicht anhand von Angaben aus dem
-Browser).
+Die Architektur bleibt dafür trotzdem offen: Die Spalte `fe_groups` und die
+Filterlogik sind von Anfang an vorhanden. Sie enthält heute allerdings nie
+eine echte Zugriffsgruppe: geschützte Seiten werden gar nicht erst indexiert
+(siehe oben). Die Spalte ist damit eine vorbereitete, noch leere Schiene für
+den späteren eigenen KI-Server. Sobald ein **selbst betriebener KI-Server**
+eingesetzt wird - die Extension ist dafür über `AiProviderInterface`
+vorbereitet - verlassen die Inhalte die eigene Infrastruktur nicht mehr, und
+geschützte Bereiche für angemeldete Nutzende werden zu einer verantwortbaren
+Erweiterung. Nötig wären dann: der Indexer läuft mit den Gruppen des
+jeweiligen Zugriffs statt anonym, und die Abfrage filtert anhand der
+angemeldeten Sitzung (nicht anhand von Angaben aus dem Browser).
 
 ### Erweiterungspunkt für Entwicklerinnen und Entwickler
 
@@ -326,10 +367,12 @@ anonymer Besucher auf dieser Seite auch selbst sehen könnte.
 Die automatische Aktualisierung nutzt die klassischen DataHandler-Hooks
 `processDatamapClass` und `processCmdmapClass`. In TYPO3 13.4 gibt es für
 diese beiden Zeitpunkte nachweislich kein PSR-14-Event; die Hooks sind der
-einzige Weg. Ob TYPO3 v14 sie ersetzt oder entfernt, ist derzeit nicht
-abschließend geklärt. Die Registrierung steht deshalb bewusst an genau einer
-Stelle (`ext_localconf.php`) und ist dort leicht austauschbar. Diese Frage
-wird in Phase 7 (Kompatibilität) endgültig beantwortet.
+einzige Weg. Nach Stand des v14-Changelogs sind beide Hooks dort unverändert
+vorhanden - es gibt keinen Breaking- oder Deprecation-Eintrag dazu. Das ist
+noch keine endgültige Bestätigung: in Phase 7 (Kompatibilität) wird das an
+einer echten v14-Installation überprüft. Die Registrierung steht deshalb
+bewusst an genau einer Stelle (`ext_localconf.php`) und ist dort leicht
+austauschbar.
 
 ## Datenschutz - Textbaustein für die Datenschutzerklärung
 
@@ -376,7 +419,8 @@ und Betreiber sind für die Prüfung selbst verantwortlich.
 | Meldung "nicht erreichbar", im Log steht `HTTP status 404` | Der eingestellte Modellname existiert nicht (mehr) oder ist für neue Zugänge gesperrt. Siehe "Hinweis zum Modellnamen". |
 | Jede Nachricht endet mit "nicht erreichbar" | Admin Tools, Maintenance, Analyze Database Structure ausführen (Cache-Tabellen fehlen). Danach Admin Tools, Log prüfen. |
 | Im Browser erscheint ein CSP-Fehler | Ist eine Content Security Policy aktiv, muss `connect-src` mindestens `'self'` erlauben. |
-| Antwort dauert und bricht dann ab | Der Server wartet höchstens 30 Sekunden auf die KI. Muss er die Anfrage einmal wiederholen (bei bestimmten Modellen nötig), kommen bis zu 15 Sekunden dazu. Der Browser bricht nach 35 Sekunden ab. |
+| Antwort dauert und bricht dann ab | Der Server hält insgesamt höchstens 30 Sekunden durch, auch wenn er die Anfrage zwischendurch wiederholen muss. Der Browser bricht nach 35 Sekunden ab. |
+| Chat antwortet immer mit "Diese Anfrage war nicht erlaubt. Bitte lade die Seite neu und versuche es noch einmal." | Site Set "Barrierefreier Chatbot" ist der Site nicht zugewiesen (siehe "Wichtig bei Weg B") - oder der Schalter "Chatbot aktivieren" in den Site Settings ist ausgeschaltet. |
 | `accessible-chatbot:index` meldet "Table 'tx_accessiblechatbot_index' doesn't exist" | Admin Tools, Maintenance, **Analyze Database Structure** ausführen. |
 | Der Befehl meldet "Es ist keine Website konfiguriert" | Unter Site Management, Sites muss mindestens eine Website mit Startseite angelegt sein. |
 | Eine versteckte Seite steht trotzdem im Index | Erst prüfen, ob es wirklich dieselbe Seite ist (Übersetzungen sind eigene Datensätze). Dann `accessible-chatbot:index` erneut ausführen und Admin Tools, Log prüfen. |

@@ -9,23 +9,14 @@ use Extension14v\AccessibleChatbot\Event\ModifyPageIndexRecordEvent;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\LoggerInterface;
 use TYPO3\CMS\Core\Context\Context;
-use TYPO3\CMS\Core\Context\DateTimeAspect;
 use TYPO3\CMS\Core\Context\LanguageAspect;
-use TYPO3\CMS\Core\Context\LanguageAspectFactory;
-use TYPO3\CMS\Core\Context\UserAspect;
-use TYPO3\CMS\Core\Context\VisibilityAspect;
-use TYPO3\CMS\Core\Context\WorkspaceAspect;
 use TYPO3\CMS\Core\Database\Connection;
 use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Database\Query\Restriction\DeletedRestriction;
 use TYPO3\CMS\Core\Database\Query\Restriction\FrontendRestrictionContainer;
-use TYPO3\CMS\Core\Domain\Access\RecordAccessVoter;
-use TYPO3\CMS\Core\Domain\DateTimeFactory;
 use TYPO3\CMS\Core\Domain\Repository\PageRepository;
 use TYPO3\CMS\Core\Exception\SiteNotFoundException;
 use TYPO3\CMS\Core\Log\Channel;
 use TYPO3\CMS\Core\Site\Entity\Site;
-use TYPO3\CMS\Core\Site\Entity\SiteLanguage;
 use TYPO3\CMS\Core\Site\SiteFinder;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
@@ -38,7 +29,9 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  * 1. Es wird NIEMALS roh in "pages"/"tt_content" abgefragt, ohne dass eine
  *    Core-Sichtbarkeitspruefung darueberliegt.
  * 2. Der globale Context wird NICHT benutzt, sondern eine Kopie, in der jeder
- *    relevante Aspekt bewusst neu gesetzt wird (siehe createContext()).
+ *    relevante Aspekt bewusst neu gesetzt wird (siehe FrontendContextFactory,
+ *    Review Phase 4, S7: identische Logik wird seither auch von
+ *    RetrievalService fuer die Sichtbarkeitspruefung der Treffer benutzt).
  * 3. Geschrieben wird ausschliesslich per QueryBuilder in die EIGENE Tabelle -
  *    niemals ueber den DataHandler, der sonst unseren eigenen Hook erneut
  *    ausloesen und eine Endlosschleife erzeugen wuerde.
@@ -78,21 +71,21 @@ final class IndexService
     private const MAX_TREE_DEPTH = 99;
     private const FALLBACK_MAX_CONTENT_LENGTH = 20000;
     private const CHUNK_SIZE = 500;
+    private const INSERT_CHUNK_SIZE = 100;
 
     /**
-     * Seitenbaum-Landkarte (uid => Zeile) fuer die Rootline-Pruefung.
-     * Wird pro Lauf einmal geladen.
-     *
-     * @var array<int, array<string, mixed>>|null
+     * "abstract" und "keywords" sind text-Spalten (65535 Byte). 16000 Zeichen
+     * bleiben bei utf8mb4 (max. 4 Byte/Zeichen) sicher darunter.
      */
-    private ?array $pageTree = null;
+    private const MAX_TEXT_FIELD_LENGTH = 16000;
 
     public function __construct(
         private readonly ConnectionPool $connectionPool,
         private readonly SiteFinder $siteFinder,
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly ConfigurationProvider $configurationProvider,
-        private readonly RecordAccessVoter $accessVoter,
+        private readonly RootLineAccessChecker $rootLineChecker,
+        private readonly FrontendContextFactory $contextFactory,
         #[Channel('accessible_chatbot')]
         private readonly LoggerInterface $logger,
     ) {}
@@ -109,6 +102,11 @@ final class IndexService
      */
     public function indexSite(Site $site, ?\Closure $progress = null): int
     {
+        // Karte nur fuer die Dauer EINES Indexierungsvorgangs halten - waehrend
+        // eines DataHandler-Durchlaufs aendert sich "pages" zwischen zwei
+        // Aufrufen (siehe RootLineAccessChecker::pageTreeMap()).
+        $this->rootLineChecker->reset();
+
         $pageUids = $this->collectSitePageUids($site);
         $rows = $this->buildRows($site, $pageUids, $progress);
 
@@ -120,17 +118,33 @@ final class IndexService
                 ['site_identifier' => $site->getIdentifier()],
                 [Connection::PARAM_STR]
             );
-            if ($rows !== []) {
-                $connection->bulkInsert(self::TABLE, $rows, self::COLUMNS);
-            }
+            $this->insertRows($connection, $rows);
             $connection->commit();
         } catch (\Throwable $exception) {
             $connection->rollBack();
+            $this->logger->error('Index rebuild failed for site {site}: {message}', [
+                'site' => $site->getIdentifier(),
+                'message' => $exception->getMessage(),
+            ]);
 
             throw $exception;
         }
 
         return count($rows);
+    }
+
+    /**
+     * Fuegt Zeilen paketweise ein, damit inhaltsreiche Seiten nicht an
+     * "max_allowed_packet" scheitern. Laeuft innerhalb der aufrufenden
+     * Transaktion, die Atomaritaet bleibt also erhalten.
+     *
+     * @param list<list<mixed>> $rows
+     */
+    private function insertRows(Connection $connection, array $rows): void
+    {
+        foreach (array_chunk($rows, self::INSERT_CHUNK_SIZE) as $chunk) {
+            $connection->bulkInsert(self::TABLE, $chunk, self::COLUMNS);
+        }
     }
 
     /**
@@ -160,8 +174,7 @@ final class IndexService
      */
     public function refreshPage(int $pageUid): void
     {
-        $this->pageTree = null;
-        $this->refresh([$pageUid], $pageUid);
+        $this->refresh([$pageUid]);
     }
 
     /**
@@ -174,41 +187,99 @@ final class IndexService
      */
     public function refreshPageTree(int $pageUid): void
     {
-        $this->pageTree = null;
-        $this->refresh($this->collectSubtreeUids($pageUid), $pageUid);
+        $this->refresh($this->collectSubtreeUids($pageUid));
     }
 
     /**
+     * Invalidiert die zwischengespeicherte Seitenbaum-Landkarte
+     * (siehe RootLineAccessChecker::pageTreeMap()).
+     *
+     * Die eigentliche Sicherheitsgarantie liegt seit dem B-1-Fix in
+     * indexSite() und refresh(): beide leeren die Karte selbst zu Beginn
+     * jedes einzelnen Indexierungsvorgangs, weil sich "pages" auch INNERHALB
+     * eines DataHandler-Durchlaufs aendern kann (mehrere Seiten in einer
+     * Datamap, mehrere move-Befehle in einer Cmdmap). Diese Methode - von
+     * IndexUpdateHook einmal pro DataHandler-Durchlauf aufgerufen - ist
+     * dadurch nur noch ein zusaetzliches, redundantes Sicherheitsnetz.
+     */
+    public function invalidatePageTreeCache(): void
+    {
+        $this->rootLineChecker->reset();
+    }
+
+    /**
+     * Bewertet eine Menge von Seiten-UIDs neu, jede fuer sich der Website
+     * zugeordnet, unter der sie tatsaechlich liegt.
+     *
+     * Bewusst PRO SEITE per SiteFinder aufgeloest statt einen gemeinsamen
+     * Anker anzunehmen: sonst wuerden Seiten einer verschachtelten Website
+     * (Website B im Seitenbaum von Website A) unter der falschen
+     * site_identifier landen.
+     *
      * @param list<int> $pageUids
      */
-    private function refresh(array $pageUids, int $siteAnchorPageUid): void
+    private function refresh(array $pageUids): void
     {
         $pageUids = array_values(array_unique(array_filter($pageUids)));
         if ($pageUids === []) {
             return;
         }
 
-        try {
-            $site = $this->siteFinder->getSiteByPageId($siteAnchorPageUid);
-        } catch (SiteNotFoundException) {
-            // Seite geloescht oder ausserhalb jeder Website: nur aufraeumen.
-            $this->deleteByPageUids($pageUids);
+        // Karte nur fuer die Dauer EINES Indexierungsvorgangs halten - waehrend
+        // eines DataHandler-Durchlaufs aendert sich "pages" zwischen zwei
+        // Aufrufen (siehe RootLineAccessChecker::pageTreeMap()).
+        $this->rootLineChecker->reset();
 
+        /** @var array<string, array{site: Site, pageUids: list<int>}> $pageUidsBySite */
+        $pageUidsBySite = [];
+        $unresolvedPageUids = [];
+        foreach ($pageUids as $pageUid) {
+            try {
+                $site = $this->siteFinder->getSiteByPageId($pageUid);
+            } catch (SiteNotFoundException) {
+                // Seite geloescht oder ausserhalb jeder Website: nur aufraeumen.
+                $unresolvedPageUids[] = $pageUid;
+
+                continue;
+            }
+
+            $identifier = $site->getIdentifier();
+            $pageUidsBySite[$identifier]['site'] = $site;
+            $pageUidsBySite[$identifier]['pageUids'][] = $pageUid;
+        }
+
+        // Review Phase 4, V11: Fruehabbruch VOR dem Buildschritt, nicht erst
+        // danach - der Buildschritt (viele SELECTs, PSR-14-Event,
+        // HTML-Konvertierung) darf nicht fuer nichts laufen.
+        if ($pageUidsBySite === [] && $unresolvedPageUids === []) {
             return;
         }
 
-        $rows = $this->buildRows($site, $pageUids);
+        // Buildschritt (viele SELECTs, PSR-14-Event, HTML-Konvertierung) bewusst
+        // VOR dem Oeffnen der Transaktion: sonst haelt er die Index-Tabelle
+        // unnoetig lange gesperrt, und ein Fehler im Event-Listener rollt die
+        // Transaktion zurueck, obwohl er nichts mit ihr zu tun hat.
+        $builtRows = [];
+        foreach ($pageUidsBySite as $identifier => $group) {
+            $builtRows[$identifier] = $this->buildRows($group['site'], $group['pageUids']);
+        }
 
         $connection = $this->connectionPool->getConnectionForTable(self::TABLE);
         $connection->beginTransaction();
         try {
-            $this->deleteByPageUids($pageUids);
-            if ($rows !== []) {
-                $connection->bulkInsert(self::TABLE, $rows, self::COLUMNS);
+            if ($unresolvedPageUids !== []) {
+                $this->deleteByPageUids($unresolvedPageUids);
+            }
+            foreach ($pageUidsBySite as $identifier => $group) {
+                $this->deleteByPageUids($group['pageUids']);
+                $this->insertRows($connection, $builtRows[$identifier]);
             }
             $connection->commit();
         } catch (\Throwable $exception) {
             $connection->rollBack();
+            $this->logger->error('Incremental index refresh failed: {message}', [
+                'message' => $exception->getMessage(),
+            ]);
 
             throw $exception;
         }
@@ -252,7 +323,7 @@ final class IndexService
      */
     private function collectSitePageUids(Site $site): array
     {
-        $context = $this->createContext($site->getDefaultLanguage());
+        $context = $this->contextFactory->create($site->getDefaultLanguage());
         $pageRepository = GeneralUtility::makeInstance(PageRepository::class, $context);
 
         $foreignRootPageIds = [];
@@ -339,7 +410,7 @@ final class IndexService
         $total = count($pageUids) * max(1, count($languages));
 
         foreach ($languages as $language) {
-            $context = $this->createContext($language);
+            $context = $this->contextFactory->create($language);
             /** @var LanguageAspect $languageAspect */
             $languageAspect = $context->getAspect('language');
             $pageRepository = GeneralUtility::makeInstance(PageRepository::class, $context);
@@ -384,8 +455,13 @@ final class IndexService
                 // Rootline-Pruefung: beim inkrementellen Update laeuft
                 // getDescendantPageIdsRecursive() nicht, deshalb hier erneut
                 // die eine Core-Regel anwenden, die "extendToSubpages" umsetzt.
-                $ancestors = $this->ancestorRows((int)($pageRow['pid'] ?? 0));
-                if (!$this->rootLineAccessGranted($ancestors, $context)) {
+                $ancestors = $this->rootLineChecker->ancestorRows((int)($pageRow['pid'] ?? 0));
+                if ($ancestors === null) {
+                    // Abgerissene Vorfahrenkette: Zugriff nicht sicher
+                    // bewertbar, Seite deshalb NICHT indexieren.
+                    continue;
+                }
+                if (!$this->rootLineChecker->rootLineAccessGranted($ancestors, $context)) {
                     continue;
                 }
 
@@ -429,16 +505,18 @@ final class IndexService
                 );
                 $record['title'] = mb_substr((string)($record['title'] ?? ''), 0, 255);
                 $record['nav_title'] = mb_substr((string)($record['nav_title'] ?? ''), 0, 255);
-                $record['abstract'] = (string)($record['abstract'] ?? '');
-                $record['keywords'] = (string)($record['keywords'] ?? '');
-                $record['fe_groups'] = mb_substr((string)($record['fe_groups'] ?? ''), 0, 255);
+                $record['abstract'] = mb_substr((string)($record['abstract'] ?? ''), 0, self::MAX_TEXT_FIELD_LENGTH);
+                $record['keywords'] = mb_substr((string)($record['keywords'] ?? ''), 0, self::MAX_TEXT_FIELD_LENGTH);
 
-                // Zuordnung ist nicht verhandelbar - ein Listener darf einen
-                // Datensatz nicht einer anderen Website oder Seite unterschieben.
+                // Zuordnung UND Zugriffsgruppen sind nicht verhandelbar - ein
+                // Listener darf weder einen Datensatz einer anderen Website
+                // oder Seite unterschieben, noch das Filterfeld fe_groups
+                // aushebeln.
                 $record['pid'] = 0;
                 $record['site_identifier'] = $site->getIdentifier();
                 $record['page_uid'] = $pageUid;
                 $record['language_uid'] = $language->getLanguageId();
+                $record['fe_groups'] = $this->collectFeGroups($pageRow, $ancestors);
                 $record['updated_at'] = $timestamp;
 
                 $rows[] = [
@@ -507,9 +585,12 @@ final class IndexService
     /**
      * Sammelt den Text der sichtbaren Inhaltselemente einer Seite.
      *
-     * Die Sprachbehandlung ist bewusst 1:1 aus dem Core uebernommen:
-     * mit Overlays werden nur Sprache 0 und -1 geholt und danach ueberlagert,
-     * ohne Overlays ("free mode") direkt die Datensaetze der Zielsprache.
+     * Die Sprachbehandlung ist bewusst 1:1 aus dem Core uebernommen
+     * (ContentObjectRenderer::getLanguageRestriction()): mit Overlays werden
+     * nur Sprache 0 und -1 geholt und danach ueberlagert; im Sprachmodus
+     * "strict" (OVERLAYS_ON_WITH_FLOATING) zusaetzlich frei schwebende
+     * Uebersetzungen ohne l18n_parent; ohne Overlays ("free mode") direkt die
+     * Datensaetze der Zielsprache.
      */
     private function collectPageContent(
         int $pageUid,
@@ -533,15 +614,34 @@ final class IndexService
             ->orderBy('colPos')
             ->addOrderBy('sorting');
 
-        $languageIds = $languageAspect->doOverlays()
-            ? [0, -1]
-            : [$languageAspect->getContentId(), -1];
-        $queryBuilder->andWhere(
-            $queryBuilder->expr()->in(
+        $expr = $queryBuilder->expr();
+        if ($languageAspect->doOverlays()) {
+            $languageConstraint = $expr->in(
                 'sys_language_uid',
-                $queryBuilder->createNamedParameter($languageIds, Connection::PARAM_INT_ARRAY)
-            )
-        );
+                $queryBuilder->createNamedParameter([0, -1], Connection::PARAM_INT_ARRAY)
+            );
+            if ($languageAspect->getOverlayType() === LanguageAspect::OVERLAYS_ON_WITH_FLOATING) {
+                $languageConstraint = $expr->or(
+                    $languageConstraint,
+                    $expr->and(
+                        $expr->eq('l18n_parent', $queryBuilder->createNamedParameter(0, Connection::PARAM_INT)),
+                        $expr->eq(
+                            'sys_language_uid',
+                            $queryBuilder->createNamedParameter($languageAspect->getContentId(), Connection::PARAM_INT)
+                        )
+                    )
+                );
+            }
+        } else {
+            $languageConstraint = $expr->in(
+                'sys_language_uid',
+                $queryBuilder->createNamedParameter(
+                    [$languageAspect->getContentId(), -1],
+                    Connection::PARAM_INT_ARRAY
+                )
+            );
+        }
+        $queryBuilder->andWhere($languageConstraint);
 
         $parts = [];
         foreach ($queryBuilder->executeQuery()->fetchAllAssociative() as $row) {
@@ -641,94 +741,6 @@ final class IndexService
     }
 
     /**
-     * Die Vorfahren einer Seite, von der direkten Elternseite aufwaerts.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function ancestorRows(int $parentPageUid): array
-    {
-        $map = $this->pageTreeMap();
-        $rows = [];
-        $seen = [];
-        $current = $parentPageUid;
-        $depth = 0;
-
-        while ($current > 0 && $depth < self::MAX_TREE_DEPTH) {
-            if (!isset($map[$current]) || isset($seen[$current])) {
-                break;
-            }
-            $seen[$current] = true;
-            $rows[] = $map[$current];
-            $current = (int)$map[$current]['pid'];
-            $depth++;
-        }
-
-        return $rows;
-    }
-
-    /**
-     * Eine kompakte Landkarte des gesamten Seitenbaums.
-     *
-     * Bewusst OHNE enable-fields: wir muessen versteckte Vorfahren SEHEN
-     * koennen, um zu erkennen, dass sie ihren Unterbaum mitverstecken.
-     *
-     * @return array<int, array<string, mixed>>
-     */
-    private function pageTreeMap(): array
-    {
-        if ($this->pageTree !== null) {
-            return $this->pageTree;
-        }
-
-        $queryBuilder = $this->connectionPool->getQueryBuilderForTable('pages');
-        $queryBuilder->getRestrictions()
-            ->removeAll()
-            ->add(GeneralUtility::makeInstance(DeletedRestriction::class));
-
-        $result = $queryBuilder
-            ->select('uid', 'pid', 'fe_group', 'extendToSubpages', 'hidden', 'starttime', 'endtime')
-            ->from('pages')
-            ->where(
-                $queryBuilder->expr()->eq(
-                    'sys_language_uid',
-                    $queryBuilder->createNamedParameter(0, Connection::PARAM_INT)
-                )
-            )
-            ->executeQuery();
-
-        $map = [];
-        while ($row = $result->fetchAssociative()) {
-            $map[(int)$row['uid']] = $row;
-        }
-
-        return $this->pageTree = $map;
-    }
-
-    /**
-     * Setzt genau die Core-Regel um, die "extendToSubpages" ausmacht:
-     * nur wenn der Haken gesetzt ist, gelten hidden/starttime/endtime/fe_group
-     * der Elternseite auch fuer alle Unterseiten.
-     *
-     * Bewusst nachgebaut statt RecordAccessVoter::accessGrantedForPageInRootLine()
-     * aufzurufen - die Methode ist @internal. accessGranted() ist es nicht.
-     *
-     * @param list<array<string, mixed>> $ancestors
-     */
-    private function rootLineAccessGranted(array $ancestors, Context $context): bool
-    {
-        foreach ($ancestors as $ancestor) {
-            if (!($ancestor['extendToSubpages'] ?? false)) {
-                continue;
-            }
-            if (!$this->accessVoter->accessGranted('pages', $ancestor, $context)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * Alle Zugriffsgruppen, die fuer diese Seite gelten: die eigene plus die
      * der Vorfahren mit "extendToSubpages".
      *
@@ -760,46 +772,5 @@ final class IndexService
         sort($groups);
 
         return mb_substr(implode(',', $groups), 0, 255);
-    }
-
-    /**
-     * Der Context fuer alle Sichtbarkeitsentscheidungen.
-     *
-     * ACHTUNG, hier haengt die gesamte Sicherheit dieser Extension dran:
-     *
-     * - Im CLI stellt TYPO3 den globalen Context auf
-     *   VisibilityAspect(true, true, false, true), also "zeige versteckte
-     *   Seiten UND versteckte Inhalte UND ignoriere Start-/Endzeiten"
-     *   (CommandApplication::initializeContext(), am Core verifiziert).
-     *   Wuerden wir den globalen Context benutzen, landeten genau die
-     *   versteckten Inhalte im Index, die der Bot niemals kennen darf.
-     * - Im Backend (DataHandler-Hook) haengt am globalen Context ausserdem der
-     *   Arbeitsbereich der Redaktion.
-     * - Der Default-UserAspect liefert eine LEERE Gruppenliste, nicht [0, -1].
-     *   Seiten mit fe_group = -1 ("bei Login verbergen") sind fuer anonyme
-     *   Besucher aber sichtbar.
-     *
-     * Deshalb: den globalen Context klonen und danach JEDEN relevanten Aspekt
-     * bewusst neu setzen. Der Singleton selbst wird nie veraendert.
-     *
-     * Der Indexer arbeitet bewusst IMMER als anonymer Besucher. Seiten mit
-     * Zugriffsgruppe kommen dadurch gar nicht erst in den Index (Konzept 3.4
-     * und 11: keine personalisierten Inhalte fuer eingeloggte Nutzer in v1).
-     */
-    private function createContext(SiteLanguage $language): Context
-    {
-        $context = clone GeneralUtility::makeInstance(Context::class);
-
-        $context->setAspect(
-            'date',
-            new DateTimeAspect(DateTimeFactory::createFromTimestamp((int)($GLOBALS['EXEC_TIME'] ?? time())))
-        );
-        $context->setAspect('visibility', new VisibilityAspect());
-        $context->setAspect('workspace', new WorkspaceAspect(0));
-        $context->setAspect('backend.user', new UserAspect());
-        $context->setAspect('frontend.user', new UserAspect(null, [0, -1]));
-        $context->setAspect('language', LanguageAspectFactory::createFromSiteLanguage($language));
-
-        return $context;
     }
 }

@@ -17,9 +17,14 @@ services:
       - '../Classes/Ai/ProviderOptions.php'
       - '../Classes/Configuration/ChatbotConfiguration.php'
       - '../Classes/Event/ModifyPageIndexRecordEvent.php'
+      - '../Classes/Http/ChatLink.php'
+      - '../Classes/Http/ChatReply.php'
       - '../Classes/Http/ChatRequestPayload.php'
       - '../Classes/Http/GenderStyle.php'
       - '../Classes/Http/InvalidChatRequestException.php'
+      - '../Classes/Retrieval/PageHit.php'
+      - '../Classes/Retrieval/RetrievalResult.php'
+      - '../Classes/Retrieval/SitemapEntry.php'
 
   # Solange es nur einen Anbieter gibt, ist der Alias die einfachste Loesung.
   # Kommt spaeter ein zweiter Adapter dazu, wird hier eine Factory eingetragen -

@@ -159,6 +159,18 @@
                 <source>This request was not allowed. Please reload the page and try again.</source>
                 <target>Diese Anfrage war nicht erlaubt. Bitte lade die Seite neu und versuche es noch einmal.</target>
             </trans-unit>
+            <trans-unit id="message.sources.one">
+                <source>Link to read more:</source>
+                <target>Link zum Nachlesen:</target>
+            </trans-unit>
+            <trans-unit id="message.sources.many">
+                <source>Links to read more:</source>
+                <target>Links zum Nachlesen:</target>
+            </trans-unit>
+            <trans-unit id="message.contacthint">
+                <source>Maybe the contact page can help you:</source>
+                <target>Vielleicht hilft dir die Kontaktseite weiter:</target>
+            </trans-unit>
         </body>
     </file>
 </xliff>

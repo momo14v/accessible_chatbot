@@ -18,11 +18,20 @@ use TYPO3\CMS\Core\Log\Channel;
  * deshalb an genau EINER Stelle (ext_localconf.php) und ist leicht ersetzbar,
  * falls TYPO3 v14 hier Events einfuehrt.
  *
- * Warum zwei Hooks:
+ * Warum vier Hook-Methoden:
  * - processDatamap_afterDatabaseOperations: Anlegen, Aendern, Verstecken
  *   (Verstecken ist ein normaler Feldwert).
  * - processCmdmap_pre-/postProcess: Loeschen, Verschieben, Uebersetzen
  *   (das sind Befehle, keine Feldwerte).
+ * - processDatamap_beforeStart / processCmdmap_beforeStart: invalidieren
+ *   zusaetzlich, als redundantes Sicherheitsnetz, einmalig je DataHandler-
+ *   Durchlauf die Seitenbaum-Landkarte des IndexService. Die eigentliche
+ *   Garantie gegen veraltete Landkarten-Daten liegt seit dem B-1-Fix IN
+ *   IndexService::indexSite()/refresh() selbst: beide leeren die Karte zu
+ *   Beginn JEDES einzelnen Indexierungsvorgangs, weil sich "pages" auch
+ *   innerhalb eines einzigen DataHandler-Durchlaufs mehrfach aendern kann
+ *   (mehrere Seiten in einer Datamap, mehrere move-Befehle in einer
+ *   Cmdmap).
  *
  * Wichtig: Der IndexService schreibt ausschliesslich per QueryBuilder in seine
  * eigene Tabelle. Wuerde er den DataHandler benutzen, riefe TYPO3 diesen Hook
@@ -53,7 +62,13 @@ final class IndexUpdateHook
      * Vor einem Befehl gemerkte Seiten (z. B. der alte Ablageort beim
      * Verschieben - nach dem Befehl waere er nicht mehr ermittelbar).
      *
-     * @var list<int>
+     * Schluessel ist "$table:$id" statt einer einzigen flachen Liste: laeuft
+     * zwischen unserem preProcess und postProcess ein verschachtelter
+     * DataHandler-Cmdmap (der Core tut das u. a. selbst), wuerde eine flache
+     * Liste durch dessen postProcess faelschlich geleert, bevor unser
+     * eigener postProcess sie liest.
+     *
+     * @var array<string, list<int>>
      */
     private array $pendingPageUids = [];
 
@@ -62,6 +77,18 @@ final class IndexUpdateHook
         #[Channel('accessible_chatbot')]
         private readonly LoggerInterface $logger,
     ) {}
+
+    /**
+     * Redundantes Sicherheitsnetz: invalidiert einmal pro DataHandler-Durchlauf
+     * die zwischengespeicherte Seitenbaum-Landkarte des IndexService. Die
+     * eigentliche Garantie liegt seit dem B-1-Fix in IndexService selbst, das
+     * die Karte zu Beginn jedes einzelnen Indexierungsvorgangs neu leert
+     * (siehe RootLineAccessChecker::pageTreeMap() und IndexService::invalidatePageTreeCache()).
+     */
+    public function processDatamap_beforeStart(DataHandler $dataHandler): void
+    {
+        $this->indexService->invalidatePageTreeCache();
+    }
 
     /**
      * Nach dem Speichern eines Datensatzes (neu, geaendert, versteckt).
@@ -113,6 +140,18 @@ final class IndexUpdateHook
     }
 
     /**
+     * Redundantes Sicherheitsnetz: invalidiert einmal pro DataHandler-Durchlauf
+     * die zwischengespeicherte Seitenbaum-Landkarte des IndexService. Die
+     * eigentliche Garantie liegt seit dem B-1-Fix in IndexService selbst, das
+     * die Karte zu Beginn jedes einzelnen Indexierungsvorgangs neu leert
+     * (siehe RootLineAccessChecker::pageTreeMap() und IndexService::invalidatePageTreeCache()).
+     */
+    public function processCmdmap_beforeStart(DataHandler $dataHandler): void
+    {
+        $this->indexService->invalidatePageTreeCache();
+    }
+
+    /**
      * Vor einem Befehl: den JETZIGEN Ablageort merken. Beim Verschieben ist er
      * danach verloren, muss aber ebenfalls neu bewertet werden.
      */
@@ -133,12 +172,16 @@ final class IndexUpdateHook
             return;
         }
 
-        $pageUid = $table === 'pages'
-            ? $this->pageUidOfPageRecord($uid)
-            : $this->pageUidOfContentRecord($uid);
+        try {
+            $pageUid = $table === 'pages'
+                ? $this->pageUidOfPageRecord($uid)
+                : $this->pageUidOfContentRecord($uid);
 
-        if ($pageUid > 0) {
-            $this->pendingPageUids[] = $pageUid;
+            if ($pageUid > 0) {
+                $this->pendingPageUids[$table . ':' . $uid][] = $pageUid;
+            }
+        } catch (\Throwable $exception) {
+            $this->logFailure($exception);
         }
     }
 
@@ -154,21 +197,26 @@ final class IndexUpdateHook
         mixed $pasteUpdate = false,
         array $pasteDatamap = []
     ): void {
-        $affected = $this->pendingPageUids;
-        $this->pendingPageUids = [];
+        $uid = (int)$id;
+        $key = $table . ':' . $uid;
+        $affected = $this->pendingPageUids[$key] ?? [];
+        unset($this->pendingPageUids[$key]);
 
         if (!$this->isRelevant($table, $dataHandler)) {
             return;
         }
 
-        $uid = (int)$id;
         $isPages = $table === 'pages';
 
-        $pageUid = $isPages
-            ? $this->pageUidOfPageRecord($uid)
-            : $this->pageUidOfContentRecord($uid);
-        if ($pageUid > 0) {
-            $affected[] = $pageUid;
+        try {
+            $pageUid = $isPages
+                ? $this->pageUidOfPageRecord($uid)
+                : $this->pageUidOfContentRecord($uid);
+            if ($pageUid > 0) {
+                $affected[] = $pageUid;
+            }
+        } catch (\Throwable $exception) {
+            $this->logFailure($exception);
         }
 
         foreach (array_unique($affected) as $affectedPageUid) {

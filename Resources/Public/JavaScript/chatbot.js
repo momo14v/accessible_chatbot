@@ -21,6 +21,9 @@ const REQUEST_TIMEOUT_MS = 35000;
 const MAX_HISTORY_ENTRIES = 10;
 const MAX_HISTORY_TEXT_LENGTH = 2000;
 
+/* Muss zu MAX_SOURCE_LINKS im ChatService passen. */
+const MAX_SOURCE_LINKS = 3;
+
 /*
  * Wahrheitswerte aus data-Attributen (z. B. data-acb-auto-navigate) koennen
  * je nach Einbindungsweg "", "0" oder "1" lauten. Ab Phase 5 daher immer
@@ -37,10 +40,6 @@ if (widgetElement !== null) {
  * Hilfsfunktionen ohne Zustand
  * ------------------------------------------------------------------ */
 
-/**
- * Liest alle Oberflaechentexte aus dem <template id="acb-i18n">-Block.
- * So steht keine einzige uebersetzbare Zeichenkette im JavaScript.
- */
 /**
  * Baut die Adresse des Endpunkts.
  *
@@ -75,6 +74,10 @@ function readNumber(value) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+/**
+ * Liest alle Oberflaechentexte aus dem <template id="acb-i18n">-Block.
+ * So steht keine einzige uebersetzbare Zeichenkette im JavaScript.
+ */
 function readLabels(root) {
     const labels = {};
     const template = root.querySelector('#acb-i18n');
@@ -97,6 +100,57 @@ function createDefaultState() {
         pendingNavigation: null,
         isOpen: false,
         genderStyle: 'pair',
+    };
+}
+
+/**
+ * Prueft eine Liste von Links, bevor sie ins DOM darf.
+ *
+ * Zwei Gruende, warum das auch bei Server-Daten passiert:
+ * 1. Dieselbe Liste kommt beim naechsten Seitenaufruf aus dem
+ *    sessionStorage zurueck - und der ist vom Browser aus beschreibbar.
+ * 2. Doppelter Boden: eine Adresse, die nicht auf die eigene Domain zeigt,
+ *    wird verworfen (gleiche Regel wie bei readPendingNavigation).
+ *
+ * javascript:-Adressen scheitern an dieser Pruefung, weil ihr origin
+ * niemals dem der Seite entspricht.
+ */
+function sanitiseLinks(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const links = [];
+
+    value.forEach((entry) => {
+        if (links.length >= MAX_SOURCE_LINKS) {
+            return;
+        }
+        if (!entry || typeof entry.url !== 'string' || typeof entry.title !== 'string' || entry.title === '') {
+            return;
+        }
+
+        try {
+            const target = new URL(entry.url, window.location.href);
+
+            if (target.origin === window.location.origin) {
+                links.push({ url: target.href, title: entry.title });
+            }
+        } catch (error) {
+            /* ungueltige Adresse: verwerfen */
+        }
+    });
+
+    return links;
+}
+
+/** Baut aus einem gespeicherten Eintrag ein sauberes Nachrichtenobjekt. */
+function sanitiseMessage(entry) {
+    return {
+        role: entry.role,
+        text: entry.text,
+        links: entry.role === 'bot' ? sanitiseLinks(entry.links) : [],
+        suggestContact: entry.role === 'bot' && entry.suggestContact === true,
     };
 }
 
@@ -146,7 +200,7 @@ function readState() {
         const parsed = JSON.parse(raw);
 
         return {
-            messages: Array.isArray(parsed.messages) ? parsed.messages.filter(isValidMessage) : [],
+            messages: Array.isArray(parsed.messages) ? parsed.messages.filter(isValidMessage).map(sanitiseMessage) : [],
             pendingNavigation: readPendingNavigation(parsed.pendingNavigation),
             isOpen: parsed.isOpen === true,
             genderStyle: parsed.genderStyle === 'colon' ? 'colon' : 'pair',
@@ -168,8 +222,17 @@ function writeState(state) {
     }
 }
 
-/** Baut ein Listenelement fuer eine Nachricht - Absender immer als sichtbarer Text. */
-function createMessageElement(message, labels) {
+/**
+ * Baut ein Listenelement fuer eine Nachricht - Absender immer als sichtbarer Text.
+ *
+ * SICHERHEIT (Phase-3-Merkposten): Im Inhaltsindex kann Text stehen, der
+ * wie Markup AUSSIEHT - der Indexer loest HTML-Entities auf, aus "&lt;b&gt;"
+ * wird also "<b>". Deshalb gilt hier ohne Ausnahme: jeder Text vom Server
+ * wird ueber textContent gesetzt, niemals ueber innerHTML. Links entstehen
+ * als echte DOM-Knoten, deren href ausschliesslich aus einer bereits
+ * geprueften, server-erzeugten Adresse stammt.
+ */
+function createMessageElement(message, labels, contactUrl) {
     const item = document.createElement('li');
     item.className = message.role === 'user' ? 'acb-msg acb-msg--user' : 'acb-msg acb-msg--bot';
 
@@ -182,6 +245,59 @@ function createMessageElement(message, labels) {
     text.textContent = message.text;
 
     item.append(sender, ' ', text);
+
+    if (message.role !== 'bot') {
+        return item;
+    }
+
+    const links = Array.isArray(message.links) ? message.links : [];
+
+    if (links.length > 0) {
+        // Ein <div> und kein <p>: eine Liste darf nicht in einem Absatz
+        // stehen, das waere ungueltiges HTML.
+        const block = document.createElement('div');
+        block.className = 'acb-msg__sources';
+
+        const intro = document.createElement('span');
+        intro.className = 'acb-msg__sources-intro';
+        intro.textContent = (links.length === 1 ? labels['sources.one'] : labels['sources.many']) ?? '';
+
+        const list = document.createElement('ul');
+        list.className = 'acb-msg__source-list';
+        list.setAttribute('role', 'list');
+
+        links.forEach((link) => {
+            const listItem = document.createElement('li');
+            const anchor = document.createElement('a');
+            anchor.className = 'acb-msg__link';
+            anchor.href = link.url;
+            anchor.textContent = link.title;
+            listItem.append(anchor);
+            list.append(listItem);
+        });
+
+        block.append(intro, list);
+        item.append(block);
+
+        return item;
+    }
+
+    if (message.suggestContact === true && contactUrl !== '') {
+        const block = document.createElement('div');
+        block.className = 'acb-msg__sources';
+
+        const intro = document.createElement('span');
+        intro.className = 'acb-msg__sources-intro';
+        intro.textContent = labels['contact.hint'] ?? '';
+
+        const anchor = document.createElement('a');
+        anchor.className = 'acb-msg__link';
+        anchor.href = contactUrl;
+        anchor.textContent = labels['error.contactlink'] ?? '';
+
+        block.append(intro, ' ', anchor);
+        item.append(block);
+    }
 
     return item;
 }
@@ -199,7 +315,17 @@ function initialiseWidget(root) {
     const languageUid = readNumber(root.dataset.acbLanguageUid);
     // Fertige Adresse vom Server. Wird nur als Fallback in Stoermeldungen
     // angeboten - das JavaScript baut selbst nie eine Adresse.
-    const contactUrl = root.dataset.acbContactUrl || '';
+    //
+    // Der Wert kommt zwar vom Server und nicht von der KI, durchlaeuft aber
+    // trotzdem dieselbe Pruefung wie jede andere Adresse in diesem Modul
+    // (Review Phase 4, V1) - so gilt ausnahmslos: jede href in diesem Widget
+    // hat sanitiseLinks() durchlaufen. Ist keine Kontaktseite gesetzt, bleibt
+    // der Wert bewusst eine leere Zeichenkette statt ueber new URL('', ...)
+    // zur aktuellen Seite aufzuloesen.
+    const rawContactUrl = root.dataset.acbContactUrl || '';
+    const contactUrl = rawContactUrl === ''
+        ? ''
+        : (sanitiseLinks([{ url: rawContactUrl, title: 'x' }])[0]?.url ?? '');
 
     const refs = {
         toggle: root.querySelector('#acb-toggle'),
@@ -235,24 +361,27 @@ function initialiseWidget(root) {
     /**
      * Schreibt eine Meldung in die Statuszeile (role="status" kuendigt sie an).
      *
-     * Der Umweg ueber das Leeren und den naechsten Frame ist noetig, damit
-     * auch zweimal dieselbe Meldung vorgelesen wird: ohne DOM-Aenderung
-     * bleibt der Screenreader sonst stumm.
+     * Der Umweg ueber das Leeren und eine kurze Verzoegerung ist noetig,
+     * damit auch zweimal dieselbe Meldung vorgelesen wird: ohne DOM-Aenderung
+     * bleibt der Screenreader sonst stumm. Review Phase 4, V1: ein einzelnes
+     * Animationsframe (~16 ms) reicht dafuer nicht immer - manche Screenreader
+     * (u. a. NVDA in Firefox) registrieren die Aenderung dann nicht als neue
+     * Ansage. 120 ms sind zuverlaessiger.
      */
     function announce(message) {
         refs.status.textContent = '';
 
         if (message) {
-            window.requestAnimationFrame(() => {
+            window.setTimeout(() => {
                 refs.status.textContent = message;
-            });
+            }, 120);
         }
     }
 
     function addMessage(message) {
         state.messages.push(message);
         writeState(state);
-        refs.list.append(createMessageElement(message, labels));
+        refs.list.append(createMessageElement(message, labels, contactUrl));
         scrollLogToEnd();
     }
 
@@ -420,7 +549,14 @@ function initialiseWidget(root) {
                     throw createRequestError('error.request');
                 }
 
-                return result.data.reply;
+                // Ab Phase 4 kommt mehr als nur Text zurueck: die Quellseiten
+                // (fertige Adressen vom Server) und der Hinweis, ob die
+                // Kontaktseite angeboten werden darf.
+                return {
+                    text: result.data.reply,
+                    links: sanitiseLinks(result.data.sources),
+                    suggestContact: result.data.suggestContact === true,
+                };
             })
             .finally(() => {
                 window.clearTimeout(timeout);
@@ -464,13 +600,15 @@ function initialiseWidget(root) {
 
         requestReply(text)
             .then((reply) => {
-                // Zuerst den Tipp-Hinweis entfernen, dann die Antwort
-                // anhaengen - sonst stuende die Antwort kurz ueber dem
-                // Hinweis "schreibt eine Antwort ...".
                 hideTyping();
 
-                if (reply !== '') {
-                    addMessage({ role: 'bot', text: reply });
+                if (reply.text !== '') {
+                    addMessage({
+                        role: 'bot',
+                        text: reply.text,
+                        links: reply.links,
+                        suggestContact: reply.suggestContact,
+                    });
                 }
             })
             .catch((error) => {
@@ -579,7 +717,7 @@ function initialiseWidget(root) {
 
     // 1. Gespeicherten Verlauf wieder aufbauen.
     state.messages.forEach((message) => {
-        refs.list.append(createMessageElement(message, labels));
+        refs.list.append(createMessageElement(message, labels, contactUrl));
     });
 
     // 2. Gewaehlte Sprachform wiederherstellen.

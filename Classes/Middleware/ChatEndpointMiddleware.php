@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Extension14v\AccessibleChatbot\Middleware;
 
 use Extension14v\AccessibleChatbot\Ai\AiProviderException;
+use Extension14v\AccessibleChatbot\Http\ChatLink;
 use Extension14v\AccessibleChatbot\Http\ChatRequestPayload;
 use Extension14v\AccessibleChatbot\Http\InvalidChatRequestException;
 use Extension14v\AccessibleChatbot\Service\ChatService;
@@ -123,12 +124,17 @@ final class ChatEndpointMiddleware implements MiddlewareInterface
             }
             $language = $this->resolveLanguage($site, $payload->languageUid);
 
-            // 4. Ist der Chatbot fuer diese Website ueberhaupt eingeschaltet?
-            //    null = die Site nutzt das Site Set gar nicht (klassischer
-            //    TypoScript-Weg) - dann treffen wir hier keine Entscheidung.
+            // 4. Ist der Chatbot fuer diese Website eingeschaltet?
+            //    null = die Site kennt die Einstellung nicht, weil ihr das Site Set nicht
+            //    zugewiesen ist. Dann wird bewusst ABGELEHNT: der Endpunkt kostet
+            //    KI-Kontingent und darf nicht auf Websites antworten, auf denen niemand
+            //    den Chatbot eingeschaltet hat.
             $enabled = $site->getSettings()->get('accessiblechatbot.enabled', null);
-            if ($enabled !== null && !$enabled) {
-                $this->logger->info('Chat request rejected: chatbot is switched off for site {site}.', ['site' => $site->getIdentifier()]);
+            if ($enabled === null || !$enabled) {
+                $this->logger->info(
+                    'Chat request rejected: chatbot is switched off (or the site set is missing) for site {site}.',
+                    ['site' => $site->getIdentifier()]
+                );
 
                 return $this->errorResponse(403, 'forbidden', 'error.forbidden', $language);
             }
@@ -149,7 +155,7 @@ final class ChatEndpointMiddleware implements MiddlewareInterface
             }
 
             // 6. KI fragen.
-            $result = $this->chatService->reply($payload, $site, $language);
+            $reply = $this->chatService->reply($payload, $site, $language);
         } catch (AiProviderException $exception) {
             $this->logger->error('Chat request failed: {reason}', [
                 'reason' => $exception->getMessage(),
@@ -172,10 +178,20 @@ final class ChatEndpointMiddleware implements MiddlewareInterface
 
         return $this->jsonResponse(
             [
-                'reply' => $result->reply,
+                'reply' => $reply->reply,
                 // action und targetPageUid werden erst ab Phase 5 ausgewertet.
-                'action' => $result->action->value,
-                'targetPageUid' => $result->targetPageUid,
+                'action' => $reply->action->value,
+                'targetPageUid' => $reply->targetPageUid,
+                // Quellseiten der Antwort. Die Adressen stammen
+                // ausschliesslich vom TYPO3-Router (ChatService).
+                'sources' => array_map(
+                    static fn(ChatLink $link): array => [
+                        'url' => $link->url,
+                        'title' => $link->title,
+                    ],
+                    $reply->sources
+                ),
+                'suggestContact' => $reply->suggestContact,
             ],
             200
         );
