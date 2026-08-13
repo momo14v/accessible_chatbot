@@ -609,6 +609,14 @@ final class IndexService
                 $queryBuilder->expr()->eq(
                     'pid',
                     $queryBuilder->createNamedParameter($pageUid, Connection::PARAM_INT)
+                ),
+                // Negative colPos = Elemente ausserhalb jedes Backend-Layouts
+                // ("Nicht verwendete Elemente"). Sie werden im Frontend nie
+                // gerendert und duerfen deshalb auch nicht in den Index
+                // (Kernprinzip 6: der Bot sieht nur, was der Besucher sieht).
+                $queryBuilder->expr()->gte(
+                    'colPos',
+                    $queryBuilder->createNamedParameter(0, Connection::PARAM_INT)
                 )
             )
             ->orderBy('colPos')

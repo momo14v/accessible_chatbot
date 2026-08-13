@@ -16,11 +16,11 @@ accessiblechatbot.enabled = 0
 # cat=accessible chatbot/widget/020; type=string; label=Name des Assistenten: Wird in der Kopfzeile und vor jeder Antwort angezeigt.
 accessiblechatbot.botName = Assistent
 
+# cat=accessible chatbot/widget/025; type=options[2,3,4,5,6]; label=Ueberschriften-Ebene im Chatfenster: Sollte zur Ueberschriften-Gliederung der Website passen. Standard ist 2.
+accessiblechatbot.headingLevel = 2
+
 # cat=accessible chatbot/widget/030; type=options[sie,du]; label=Anrede der Antworten: Wie der Assistent die Besucher anspricht.
 accessiblechatbot.salutation = sie
-
-# cat=accessible chatbot/widget/040; type=boolean; label=Automatisch navigieren: Auf ausdruecklichen Wunsch selbst zur Zielseite wechseln.
-accessiblechatbot.autoNavigate = 1
 
 # cat=accessible chatbot/widget/050; type=int+; label=Seite mit der Datenschutzerklaerung: Seiten-UID, 0 = kein Link.
 accessiblechatbot.privacyPageUid = 0

@@ -24,11 +24,21 @@ const MAX_HISTORY_TEXT_LENGTH = 2000;
 /* Muss zu MAX_SOURCE_LINKS im ChatService passen. */
 const MAX_SOURCE_LINKS = 3;
 
+/* Muss zu MAX_CLARIFY_CHOICES im ChatService passen. */
+const MAX_CLARIFY_CHOICES = 3;
+
 /*
- * Wahrheitswerte aus data-Attributen (z. B. data-acb-auto-navigate) koennen
- * je nach Einbindungsweg "", "0" oder "1" lauten. Ab Phase 5 daher immer
- * streng auf === '1' pruefen, niemals nur auf "wahrheitsartig".
+ * Obergrenze fuer Titel, die aus dem sessionStorage kommen. Der Speicher ist
+ * vom Browser aus beschreibbar - ein absurd langer Titel soll die Anzeige
+ * nicht sprengen koennen.
  */
+const MAX_TITLE_LENGTH = 120;
+
+/*
+ * Ab dieser Laenge wird eine Antwort nicht mehr im Volltext angesagt, sondern
+ * nur kurz gemeldet; nachlesbar ist sie ohnehin im Verlauf (Konzept 8.3).
+ */
+const ANNOUNCE_FULL_MAX_CHARS = 160;
 
 const widgetElement = document.getElementById('acb-widget');
 
@@ -65,6 +75,47 @@ function createRequestError(labelKey) {
     error.acbLabel = labelKey;
 
     return error;
+}
+
+/**
+ * Setzt einen Wert in einen uebersetzten Text mit %s ein.
+ *
+ * Fluid kann das hier nicht: der Seitentitel steht erst zur Laufzeit fest.
+ * Fehlt das %s in einer Uebersetzung, wird der Wert angehaengt statt
+ * verschluckt - lieber unschoen als unvollstaendig.
+ */
+function formatLabel(template, value) {
+    const text = typeof template === 'string' ? template : '';
+    const safeValue = typeof value === 'string' ? value : '';
+
+    return text.includes('%s')
+        // Ersatz als Funktion: sonst wuerde String.replace Muster wie "$&"
+        // im Seitentitel als Rueckverweis deuten und den Text verstuemmeln.
+        ? text.replace('%s', () => safeValue)
+        : (text + ' ' + safeValue).trim();
+}
+
+/**
+ * Steht der Browser gerade auf genau dieser Adresse?
+ *
+ * Der gemerkte Navigationswunsch liegt im sessionStorage und ist damit
+ * beschreibbar. Ohne diesen Abgleich koennte eine veraltete oder gefaelschte
+ * Angabe behaupten, man sei auf einer Seite, auf der man gar nicht ist. Das
+ * betrifft auch den harmlosen Alltagsfall "Link in neuem Tab geoeffnet": der
+ * alte Tab hat den Merker dann ebenfalls, wechselt aber nicht die Seite.
+ *
+ * Verglichen werden bewusst nur Herkunft und Pfad, nicht Query oder Anker:
+ * eine vom Server angehaengte Query soll die Bestaetigung nicht unterdruecken.
+ */
+function isCurrentPage(url) {
+    try {
+        const target = new URL(url, window.location.href);
+
+        return target.origin === window.location.origin
+            && target.pathname === window.location.pathname;
+    } catch (error) {
+        return false;
+    }
 }
 
 /** Liest eine Zahl aus einem data-Attribut; alles Ungueltige wird zu 0. */
@@ -110,7 +161,7 @@ function createDefaultState() {
  * 1. Dieselbe Liste kommt beim naechsten Seitenaufruf aus dem
  *    sessionStorage zurueck - und der ist vom Browser aus beschreibbar.
  * 2. Doppelter Boden: eine Adresse, die nicht auf die eigene Domain zeigt,
- *    wird verworfen (gleiche Regel wie bei readPendingNavigation).
+ *    wird verworfen (gleiche Regel wie bei sanitiseNavigation).
  *
  * javascript:-Adressen scheitern an dieser Pruefung, weil ihr origin
  * niemals dem der Seite entspricht.
@@ -148,8 +199,14 @@ function sanitiseLinks(value) {
 function sanitiseMessage(entry) {
     return {
         role: entry.role,
-        text: entry.text,
+        // Der Speicher ist vom Browser aus beschreibbar - ein absurd langer
+        // Text soll die Anzeige nicht sprengen koennen.
+        text: entry.text.slice(0, MAX_HISTORY_TEXT_LENGTH),
         links: entry.role === 'bot' ? sanitiseLinks(entry.links) : [],
+        // Auch das Navigationsangebot kommt beim naechsten Seitenaufruf aus
+        // dem sessionStorage zurueck und wird deshalb erneut geprueft.
+        navigation: entry.role === 'bot' ? sanitiseNavigation(entry.navigation) : null,
+        choices: entry.role === 'bot' ? sanitiseChoices(entry.choices) : [],
         suggestContact: entry.role === 'bot' && entry.suggestContact === true,
     };
 }
@@ -161,12 +218,22 @@ function isValidMessage(entry) {
 }
 
 /**
- * Der sessionStorage ist vom Browser aus beschreibbar. Ein Navigationsziel
- * wird daher nur uebernommen, wenn es die erwartete Form hat UND auf die
- * eigene Domain zeigt - sonst wird es verworfen.
+ * Prueft ein Navigationsangebot, bevor es ins DOM oder in den Speicher darf.
+ *
+ * Uebernommen wird es nur, wenn es die erwartete Form hat UND auf die eigene
+ * Herkunft zeigt. Dadurch scheitern auch "javascript:"-Adressen, deren origin
+ * nie dem der Seite entspricht. Der Titel wird gekappt - er landet als
+ * textContent im Knopf und kann kein Markup einschleusen, wohl aber die
+ * Anzeige sprengen.
  */
-function readPendingNavigation(value) {
+function sanitiseNavigation(value) {
     if (!value || typeof value.url !== 'string' || typeof value.title !== 'string') {
+        return null;
+    }
+
+    const title = value.title.trim().slice(0, MAX_TITLE_LENGTH);
+
+    if (title === '') {
         return null;
     }
 
@@ -177,10 +244,36 @@ function readPendingNavigation(value) {
             return null;
         }
 
-        return { url: target.href, title: value.title };
+        return { url: target.href, title: title };
     } catch (error) {
         return null;
     }
+}
+
+/**
+ * Prueft die Auswahltitel einer Rueckfrage. Es sind reine Texte - sie werden
+ * ausschliesslich ueber textContent gesetzt und loesen keine Navigation aus.
+ */
+function sanitiseChoices(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    const choices = [];
+
+    value.forEach((entry) => {
+        if (choices.length >= MAX_CLARIFY_CHOICES || typeof entry !== 'string') {
+            return;
+        }
+
+        const title = entry.trim().slice(0, MAX_TITLE_LENGTH);
+
+        if (title !== '') {
+            choices.push(title);
+        }
+    });
+
+    return choices;
 }
 
 /**
@@ -201,7 +294,7 @@ function readState() {
 
         return {
             messages: Array.isArray(parsed.messages) ? parsed.messages.filter(isValidMessage).map(sanitiseMessage) : [],
-            pendingNavigation: readPendingNavigation(parsed.pendingNavigation),
+            pendingNavigation: sanitiseNavigation(parsed.pendingNavigation),
             isOpen: parsed.isOpen === true,
             genderStyle: parsed.genderStyle === 'colon' ? 'colon' : 'pair',
         };
@@ -235,6 +328,7 @@ function writeState(state) {
 function createMessageElement(message, labels, contactUrl) {
     const item = document.createElement('li');
     item.className = message.role === 'user' ? 'acb-msg acb-msg--user' : 'acb-msg acb-msg--bot';
+    item.tabIndex = -1;
 
     const sender = document.createElement('span');
     sender.className = 'acb-msg__sender';
@@ -248,6 +342,65 @@ function createMessageElement(message, labels, contactUrl) {
 
     if (message.role !== 'bot') {
         return item;
+    }
+
+    // Navigationsangebot (Konzept 4.5): ein deutlich gestalteter Knopf
+    // INNERHALB der Bot-Nachricht.
+    //
+    // Bewusst ein <a> mit echter Adresse und kein <button>: ein Seitenwechsel
+    // ist ein Link. Dadurch sagt der Screenreader "Link" an (also "hier
+    // wechselt die Seite"), "in neuem Tab oeffnen" und das Kontextmenue
+    // funktionieren, und ohne JavaScript passiert schlicht gar nichts.
+    // Die Adresse hat sanitiseNavigation() durchlaufen.
+    if (message.navigation) {
+        const block = document.createElement('div');
+        block.className = 'acb-msg__actions';
+
+        const anchor = document.createElement('a');
+        anchor.className = 'acb-navigate';
+        anchor.href = message.navigation.url;
+        anchor.textContent = formatLabel(labels['navigate.button'], message.navigation.title);
+        // Der reine Seitentitel fuer die Bestaetigung auf der Zielseite -
+        // der Knopftext enthaelt ja zusaetzlich die Aufforderung.
+        anchor.dataset.acbTitle = message.navigation.title;
+
+        block.append(anchor);
+        item.append(block);
+    } else if (Array.isArray(message.choices) && message.choices.length > 0) {
+        // Rueckfrage (Konzept 4.5): echte Knoepfe, die die Praezisierung
+        // SENDEN. Sie navigieren nicht - eine Auswahl darf niemals von selbst
+        // den Seitenkontext wechseln (WCAG 3.2.2 On Input).
+        const block = document.createElement('div');
+        block.className = 'acb-msg__actions';
+
+        const intro = document.createElement('span');
+        intro.className = 'acb-msg__actions-intro';
+        intro.textContent = labels['clarify.intro'] ?? '';
+        const introId = 'acb-choices-' + Math.random().toString(36).slice(2, 10);
+        intro.id = introId;
+
+        const list = document.createElement('ul');
+        list.className = 'acb-msg__choices';
+        list.setAttribute('role', 'list');
+        list.setAttribute('aria-labelledby', introId);
+
+        message.choices.forEach((title) => {
+            const listItem = document.createElement('li');
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'acb-choice';
+            // Der Knopftext IST die Nachricht, die abgeschickt wird. Der
+            // Nutzer sieht damit vorher genau, was passieren wird.
+            button.textContent = formatLabel(labels['clarify.option'], title);
+            button.dataset.acbChoice = button.textContent;
+
+            listItem.append(button);
+            list.append(listItem);
+        });
+
+        block.append(intro, list);
+        item.append(block);
     }
 
     const links = Array.isArray(message.links) ? message.links : [];
@@ -351,10 +504,29 @@ function initialiseWidget(root) {
     const state = readState();
     let typingElement = null;
     let awaitingReply = false;
+    let announceTimeout = null;
+    let pendingAnnouncement = '';
 
     /* ---------- kleine Helfer mit Zugriff auf den Zustand ---------- */
 
-    function scrollLogToEnd() {
+    function scrollLogToEnd(force) {
+        // 1. Der Fokus steht auf einer bestimmten Nachricht -> nicht scrollen.
+        if (force !== true
+            && refs.log.contains(document.activeElement)
+            && document.activeElement !== refs.log) {
+            return;
+        }
+
+        // 2. Der Nutzer hat selbst nach oben gescrollt (auch ohne Fokus im
+        //    Verlauf, z. B. mit der Maus) -> ebenfalls nicht scrollen.
+        //    Toleranz von 2 rem, damit "fast unten" noch als unten gilt.
+        const tolerance = 32;
+        const atBottom = refs.log.scrollHeight - refs.log.scrollTop - refs.log.clientHeight <= tolerance;
+
+        if (force !== true && !atBottom) {
+            return;
+        }
+
         refs.log.scrollTop = refs.log.scrollHeight;
     }
 
@@ -369,10 +541,29 @@ function initialiseWidget(root) {
      * Ansage. 120 ms sind zuverlaessiger.
      */
     function announce(message) {
+        // Ist das Chatfenster zu, liegt die Ansage-Region in einem
+        // display:none-Bereich und wird von Screenreadern nicht vorgelesen.
+        // Die Ansage wird dann gemerkt und beim naechsten Oeffnen nachgeholt
+        // (Konzept 8.3: nichts geht stillschweigend verloren).
+        if (refs.dialog.hidden) {
+            pendingAnnouncement = message ?? '';
+            return;
+        }
+
+        // Eine noch wartende Ansage wird verworfen. Ohne dieses Loeschen
+        // ueberholt eine zweite Ansage die erste: der noch laufende Timer der
+        // ersten schreibt seinen Text NACH dem der zweiten in die Region -
+        // angesagt wird dann die veraltete Meldung.
+        if (announceTimeout !== null) {
+            window.clearTimeout(announceTimeout);
+            announceTimeout = null;
+        }
+
         refs.status.textContent = '';
 
         if (message) {
-            window.setTimeout(() => {
+            announceTimeout = window.setTimeout(() => {
+                announceTimeout = null;
                 refs.status.textContent = message;
             }, 120);
         }
@@ -389,21 +580,26 @@ function initialiseWidget(root) {
      * Schreibt eine Hinweiszeile ins Gespraechsprotokoll.
      *
      * Diese Zeilen werden bewusst NICHT im sessionStorage gespeichert und
-     * nicht an den Server mitgeschickt: sie gehoeren nicht zum Gespraech,
-     * sondern erklaeren eine Stoerung.
+     * nicht an den Server mitgeschickt: sie gehoeren nicht zum Gespraech.
      *
-     * Barrierefreiheit: das Protokoll ist role="log" mit aria-live="polite" -
-     * eine neue Zeile wird dadurch automatisch vorgelesen. Der sichtbare
-     * Vorspann "Hinweis:" sorgt dafuer, dass die Art der Nachricht nicht
-     * allein an der Farbe haengt.
+     * Barrierefreiheit: seit Phase 5 hat das Protokoll KEIN aria-live mehr.
+     * Die Meldung wird deshalb zusaetzlich ueber announce() in die
+     * Ansage-Region geschrieben - sichtbar im Verlauf, einmalig angesagt
+     * (Konzept 8.3). Der sichtbare Vorspann "Hinweis:" sorgt dafuer, dass die
+     * Art der Nachricht nicht allein an der Farbe haengt.
+     *
+     * withContactLink = false und ein eigener Modifier werden fuer die
+     * Ankunfts-Bestaetigung nach einer Navigation benutzt: sie ist keine
+     * Stoerung und braucht deshalb weder Warnfarbe noch Notausgang.
      */
-    function addSystemMessage(text) {
+    function addSystemMessage(text, withContactLink = true, modifier = 'acb-msg--system') {
         if (!text) {
             return;
         }
 
         const item = document.createElement('li');
-        item.className = 'acb-msg acb-msg--system';
+        item.className = 'acb-msg ' + modifier;
+        item.tabIndex = -1;
 
         const sender = document.createElement('span');
         sender.className = 'acb-msg__sender';
@@ -418,7 +614,7 @@ function initialiseWidget(root) {
         // Konzept 6.1: bei Stoerungen soll - falls konfiguriert - ein Weg zur
         // Kontaktseite angeboten werden. Der Link ist ein normales
         // <a>-Element und damit tastaturerreichbar.
-        if (contactUrl !== '') {
+        if (withContactLink && contactUrl !== '') {
             const link = document.createElement('a');
             link.className = 'acb-msg__link';
             link.href = contactUrl;
@@ -443,10 +639,19 @@ function initialiseWidget(root) {
     }
 
     function hideTyping() {
-        if (typingElement !== null) {
-            typingElement.remove();
-            typingElement = null;
+        if (typingElement === null) {
+            return;
         }
+
+        // Steht der Fokus auf der Tipp-Zeile, wandert er zuerst auf den
+        // Verlauf. Ohne das setzt der Browser ihn auf <body> und der Nutzer
+        // landet unangekuendigt am Seitenanfang (Konzept 8.4).
+        if (typingElement.contains(document.activeElement)) {
+            refs.log.focus();
+        }
+
+        typingElement.remove();
+        typingElement = null;
     }
 
     /**
@@ -465,7 +670,14 @@ function initialiseWidget(root) {
         writeState(state);
 
         if (open) {
-            scrollLogToEnd();
+            scrollLogToEnd(true);
+
+            // Nachgemerkte Ansage nachholen, siehe announce().
+            if (pendingAnnouncement !== '') {
+                const pending = pendingAnnouncement;
+                pendingAnnouncement = '';
+                announce(pending);
+            }
 
             if (moveFocus) {
                 refs.input.focus();
@@ -555,6 +767,8 @@ function initialiseWidget(root) {
                 return {
                     text: result.data.reply,
                     links: sanitiseLinks(result.data.sources),
+                    navigation: sanitiseNavigation(result.data.navigation),
+                    choices: sanitiseChoices(result.data.choices),
                     suggestContact: result.data.suggestContact === true,
                 };
             })
@@ -581,10 +795,13 @@ function initialiseWidget(root) {
             return;
         }
 
-        announce('');
         addMessage({ role: 'user', text });
         refs.input.value = '';
         showTyping();
+
+        // Das Protokoll hat kein aria-live mehr; der Tipp-Status wird deshalb
+        // hier EINMAL angesagt (Konzept 8.3) und nie auf einem Timer wiederholt.
+        announce(labels['status.typing'] ?? '');
 
         awaitingReply = true;
         // Bewusst aria-disabled statt disabled:
@@ -607,8 +824,18 @@ function initialiseWidget(root) {
                         role: 'bot',
                         text: reply.text,
                         links: reply.links,
+                        navigation: reply.navigation,
+                        choices: reply.choices,
                         suggestContact: reply.suggestContact,
                     });
+
+                    // Kurze Antworten werden im Volltext angesagt, lange nur
+                    // kurz gemeldet - eine sehr lange Live-Ansage laesst sich
+                    // nicht anhalten und nicht wiederholen. Nachlesbar ist die
+                    // Antwort in beiden Faellen im Verlauf (Kernprinzip 4).
+                    announce(reply.text.length <= ANNOUNCE_FULL_MAX_CHARS
+                        ? reply.text
+                        : (labels['status.newanswer'] ?? ''));
                 }
             })
             .catch((error) => {
@@ -623,6 +850,11 @@ function initialiseWidget(root) {
                     || '';
 
                 addSystemMessage(errorText);
+
+                // Pflicht seit Phase 5: ohne aria-live am Protokoll wuerde eine
+                // Stoermeldung sonst gar nicht mehr angesagt (Exit-Kriterium
+                // Phase 2: nie stilles Schweigen).
+                announce(errorText);
             })
             .finally(() => {
                 awaitingReply = false;
@@ -632,12 +864,46 @@ function initialiseWidget(root) {
 
     /* ---------- Spracheingabe ---------- */
 
+    /**
+     * Schaltet das Widget in den Zustand "Spracheingabe geht hier nicht".
+     * Knopf und Datenfluss-Hinweis werden dabei IMMER wieder versteckt: diese
+     * Funktion laeuft auch aus dem catch heraus, also moeglicherweise erst,
+     * nachdem beide bereits sichtbar gemacht wurden. Sonst stuende ein toter
+     * Knopf neben dem Hinweis, dass es nicht geht (Konzept 8.9).
+     */
+    function showSpeechUnavailable() {
+        if (refs.micButton) {
+            refs.micButton.hidden = true;
+            refs.micButton.setAttribute('aria-pressed', 'false');
+        }
+
+        const micHint = root.querySelector('#acb-mic-hint');
+
+        if (micHint !== null) {
+            micHint.hidden = true;
+        }
+
+        const notice = root.querySelector('#acb-mic-unavailable');
+
+        if (notice !== null) {
+            notice.hidden = false;
+        }
+    }
+
     function setUpSpeechInput() {
         const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-        // Browser ohne Unterstuetzung (z. B. Firefox in der Standardeinstellung):
-        // Der Button bleibt hidden - kein toter Knopf, kein Tabstopp.
-        if (!Recognition || !refs.micButton) {
+        if (!refs.micButton) {
+            return;
+        }
+
+        // Fehlt die Schnittstelle (Firefox in der Standardeinstellung) oder
+        // laeuft die Seite nicht ueber eine sichere Verbindung (kein HTTPS und
+        // nicht localhost), funktioniert die Spracheingabe nicht. Dann erscheint
+        // ein sichtbarer Hinweis statt eines toten oder unsichtbaren Knopfes
+        // (Konzept 8.9).
+        if (!Recognition || window.isSecureContext !== true) {
+            showSpeechUnavailable();
             return;
         }
 
@@ -653,6 +919,7 @@ function initialiseWidget(root) {
         recognition.maxAlternatives = 1;
 
         let listening = false;
+        let starting = false;
         let handled = false;
 
         refs.micButton.hidden = false;
@@ -669,46 +936,58 @@ function initialiseWidget(root) {
                 return;
             }
 
+            // Zwischen Klick und "start"-Ereignis vergeht Zeit. Ein zweiter
+            // recognition.start() in dieser Luecke wirft einen InvalidStateError -
+            // bei schnellem Doppelklick genau der Fall.
+            if (starting) {
+                return;
+            }
+
             handled = false;
+            starting = true;
 
             try {
                 recognition.start();
             } catch (error) {
-                announce(labels['mic.error']);
+                starting = false;
+                announce(labels['mic.error'] ?? '');
             }
         });
 
         recognition.addEventListener('start', () => {
+            starting = false;
             listening = true;
             refs.micButton.setAttribute('aria-pressed', 'true');
-            announce(labels['mic.listening']);
+            announce(labels['mic.listening'] ?? '');
         });
 
         recognition.addEventListener('result', (event) => {
             handled = true;
             refs.input.value = event.results?.[0]?.[0]?.transcript ?? '';
-            announce(labels['mic.recognized']);
+            announce(labels['mic.recognized'] ?? '');
             refs.input.focus();
         });
 
         recognition.addEventListener('error', (event) => {
             handled = true;
+            starting = false;
 
             if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                announce(labels['mic.denied']);
+                announce(labels['mic.denied'] ?? '');
             } else if (event.error === 'no-speech') {
-                announce(labels['mic.nospeech']);
+                announce(labels['mic.nospeech'] ?? '');
             } else {
-                announce(labels['mic.error']);
+                announce(labels['mic.error'] ?? '');
             }
         });
 
         recognition.addEventListener('end', () => {
+            starting = false;
             listening = false;
             refs.micButton.setAttribute('aria-pressed', 'false');
 
             if (!handled) {
-                announce(labels['mic.stopped']);
+                announce(labels['mic.stopped'] ?? '');
             }
         });
     }
@@ -720,19 +999,60 @@ function initialiseWidget(root) {
         refs.list.append(createMessageElement(message, labels, contactUrl));
     });
 
+    // 1b. Ankunft nach einer bestaetigten Navigation (Konzept 4.5).
+    //
+    //     Der Fokus wird dabei ausdruecklich NICHT gesetzt: automatisches
+    //     Fokussieren beim Seitenladen laesst Screenreader nur die
+    //     Beschriftung des fokussierten Elements vorlesen statt der Seite -
+    //     Nutzende verlieren dadurch die Orientierung (MDN, Konzept 8.4).
+    //
+    //     Der Block steht bewusst VOR setOpen(): ist das Chatfenster zu,
+    //     merkt announce() die Ansage und holt sie beim Oeffnen nach.
+    const arrival = state.pendingNavigation;
+
+    if (arrival !== null) {
+        // Genau einmal: der Merker wird sofort geloescht.
+        state.pendingNavigation = null;
+        writeState(state);
+
+        if (isCurrentPage(arrival.url)) {
+            const arrivalText = formatLabel(labels['navigate.arrived'], arrival.title);
+
+            addSystemMessage(arrivalText, false, 'acb-msg--arrival');
+
+            // Direkt nach dem Seitenladen registrieren Screenreader eine
+            // Aenderung in der role="status"-Region oft noch nicht als
+            // Ansage, sondern als normalen Seiteninhalt. Eine Sekunde Abstand
+            // ist KEIN Zeitlimit im Sinne von WCAG 2.2.1: es passiert dadurch
+            // nichts, es wird nur etwas vorgelesen. Ist das Chatfenster zu,
+            // merkt announce() die Ansage ohnehin fuer das naechste Oeffnen.
+            window.setTimeout(() => announce(arrivalText), 1000);
+        }
+    }
+
     // 2. Gewaehlte Sprachform wiederherstellen.
     refs.genderInputs.forEach((option) => {
         option.checked = option.value === state.genderStyle;
     });
 
-    // 3. Spracheingabe nur bei Browser-Unterstuetzung freischalten.
-    setUpSpeechInput();
-
-    // 4. Erst jetzt sichtbar machen: ohne JavaScript erscheint gar nichts.
+    // 3. Sichtbar machen: ohne JavaScript erscheint gar nichts.
     root.hidden = false;
 
-    // 5. Offen/zu wiederherstellen - ohne den Fokus zu bewegen.
+    // 4. Offen/zu wiederherstellen - ohne den Fokus zu bewegen.
     setOpen(state.isOpen, false);
+
+    // 5. Spracheingabe ZULETZT und abgesichert.
+    //    Testbefund 2026-08-13: eine Ausnahme in der Sprach-Schnittstelle hat
+    //    den Rest dieser Funktion abgebrochen - das Widget blieb hidden und war
+    //    komplett verschwunden. Ein Randfeature darf das Hauptfeature nie
+    //    mitreissen: das Widget ist bereits sichtbar und bedienbar, bevor hier
+    //    ueberhaupt etwas passieren kann, und ein Fehler endet in einem
+    //    sichtbaren Hinweis statt in einem toten Widget.
+    try {
+        setUpSpeechInput();
+    } catch (error) {
+        showSpeechUnavailable();
+    }
 
     /* ---------- Ereignisse ---------- */
 
@@ -764,6 +1084,103 @@ function initialiseWidget(root) {
         }
 
         setOpen(false, focusWasInsideWidget);
+    });
+
+    /*
+     * Tastaturbedienung im Verlauf (Konzept 8.1): Pfeil runter/hoch gehen von
+     * Nachricht zu Nachricht, Pos1/Ende an Anfang und Ende. Der Listener haengt
+     * am Verlauf, greift also nur, wenn der Fokus dort drin steht - das
+     * Eingabefeld liegt ausserhalb und behaelt Pos1/Ende fuer den Text.
+     * Es sind keine Einzeltasten-Kuerzel im Sinne von WCAG 2.1.4, weil sie
+     * ausserhalb des Verlaufs wirkungslos sind.
+     */
+    refs.log.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp'
+            && event.key !== 'Home' && event.key !== 'End') {
+            return;
+        }
+
+        // Nur echte Nachrichten. Die Tipp-Zeile hat bewusst kein tabindex
+        // (sie ist ein voruebergehender Status, keine Nachricht) - stuende
+        // sie in dieser Liste, liefe die Pfeiltasten-Navigation waehrend
+        // einer laufenden Antwort ins Leere.
+        const items = Array.from(refs.list.children).filter(
+            (item) => item.hasAttribute('tabindex')
+        );
+
+        if (items.length === 0) {
+            return;
+        }
+
+        const current = items.findIndex((item) => item.contains(document.activeElement));
+        let next;
+
+        if (event.key === 'Home') {
+            next = 0;
+        } else if (event.key === 'End') {
+            next = items.length - 1;
+        } else if (event.key === 'ArrowDown') {
+            next = current < 0 ? 0 : Math.min(current + 1, items.length - 1);
+        } else {
+            next = current < 0 ? items.length - 1 : Math.max(current - 1, 0);
+        }
+
+        event.preventDefault();
+        items[next].focus();
+    });
+
+    /*
+     * Ein Klick im Verlauf, an genau einer Stelle behandelt (Ereignis-
+     * Delegation). Das funktioniert dadurch auch fuer Nachrichten, die beim
+     * Seitenaufruf aus dem sessionStorage wiederhergestellt wurden.
+     */
+    refs.list.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+
+        if (target === null) {
+            return;
+        }
+
+        // Auswahlknopf einer Rueckfrage: sendet die Praezisierung und
+        // navigiert NICHT (WCAG 3.2.2). Der Weg fuehrt bewusst ueber
+        // sendMessage(), damit exakt dieselben Pruefungen und Ansagen greifen
+        // wie beim Tippen.
+        const choice = target.closest('button.acb-choice');
+
+        if (choice !== null) {
+            // Solange eine Antwort laeuft, darf ein Klick den getippten
+            // Entwurf im Eingabefeld nicht ueberschreiben - sendMessage()
+            // wuerde ohnehin sofort zurueckkehren, der Text waere aber weg.
+            if (awaitingReply) {
+                announce(labels['status.typing'] ?? '');
+
+                return;
+            }
+
+            refs.input.value = choice.dataset.acbChoice ?? '';
+            sendMessage();
+
+            // Der Knopf liegt IM Verlauf und hat jetzt den Fokus - ohne
+            // "force" haelt scrollLogToEnd() an und die neue eigene Nachricht
+            // samt Tipp-Zeile bliebe unsichtbar.
+            scrollLogToEnd(true);
+
+            return;
+        }
+
+        // Navigationsangebot: hier wird NICHT navigiert. Der Seitenwechsel
+        // passiert allein dadurch, dass der Nutzer einen ganz normalen Link
+        // betaetigt hat. Gemerkt wird nur, wohin - damit auf der Zielseite
+        // die Bestaetigung im Verlauf stehen kann.
+        const navigate = target.closest('a.acb-navigate');
+
+        if (navigate !== null) {
+            state.pendingNavigation = {
+                url: navigate.href,
+                title: navigate.dataset.acbTitle ?? '',
+            };
+            writeState(state);
+        }
     });
 
     refs.form.addEventListener('submit', (event) => {

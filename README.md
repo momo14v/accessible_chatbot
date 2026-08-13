@@ -1,10 +1,10 @@
 # Accessible Chatbot
 
-Ein barrierefreier Chatbot für TYPO3, der Fragen ausschließlich aus den sichtbaren Inhalten der jeweiligen Website beantwortet und Nutzer:innen auf Wunsch zu passenden Seiten navigiert. Die Entwicklung orientiert sich an WCAG 2.1 AA (Maßstab BITV 2.0); eine formale Konformitätsaussage setzt eine externe Prüfung voraus.
+Ein barrierefreier Chatbot für TYPO3, der Fragen ausschließlich aus den sichtbaren Inhalten der jeweiligen Website beantwortet und Nutzerinnen und Nutzer auf Wunsch zu passenden Seiten navigiert. Die Entwicklung orientiert sich an Zielnorm WCAG 2.2 AA (EN 301 549); es wird keine Konformitätsaussage getroffen.
 
 ## Status
 
-Version 0.4.0 - in Entwicklung (Phase 4 von 7). Das barrierefreie Chat-Widget ist vorhanden und beantwortet Fragen über die Google-Gemini-API. Seit Phase 4 greift der Chat auf den Inhaltsindex zu: Der Bot beantwortet Fragen aus den tatsächlichen, sichtbaren Inhalten dieser Website und nennt zu jeder inhaltlich gestützten Antwort einen oder mehrere Links auf die verwendeten Seiten. Findet er keine passende Seite, sagt er das ehrlich und bietet - falls eingerichtet - die Kontaktseite an. Eine ausdrückliche Aufforderung zur Navigation ("bring mich zu ...") führt noch nicht automatisch zu einem Seitenwechsel; das folgt in Phase 5.
+Version 0.6.0 - in Entwicklung (Phase 6 von 9). Das barrierefreie Chat-Widget ist vorhanden und beantwortet Fragen über die Google-Gemini-API. Seit Phase 4 greift der Chat auf den Inhaltsindex zu: Der Bot beantwortet Fragen aus den tatsächlichen, sichtbaren Inhalten dieser Website und nennt zu jeder inhaltlich gestützten Antwort einen oder mehrere Links auf die verwendeten Seiten. Findet er keine passende Seite, sagt er das ehrlich und bietet - falls eingerichtet - die Kontaktseite an. Seit Phase 5 ist der Gesprächsverlauf mit Pfeiltasten durchsuchbar und Ansagen laufen über eine eigene Statuszeile statt über den Verlauf selbst; fehlt die Spracherkennung des Browsers, erscheint ein sichtbarer Hinweis. Seit Phase 6 kann der Assistent zu einer Seite führen. Er bietet dafür einen Knopf innerhalb seiner Antwort an — die Seite wechselt ausschließlich, wenn dieser Knopf betätigt wird. Einen automatischen Seitenwechsel gibt es in keiner Einstellung. Passen mehrere Seiten, stellt der Assistent eine Rückfrage mit Auswahlknöpfen.
 
 ## Voraussetzungen
 
@@ -67,6 +67,16 @@ Trifft eines davon zu, hilft Weg B - oder das Häkchen "Clear Setup" entfernen.
    "Clear Setup" angehakt sein.
 2. Im Constant Editor (Kategorie "accessible chatbot") `accessiblechatbot.enabled`
    auf 1 setzen und die übrigen Konstanten anpassen.
+3. Zusätzlich das Site Set der Site zuweisen und dort „Chatbot aktivieren" einschalten.
+   Der Chat-Endpunkt liest diesen Schalter **ausschließlich** aus den Site Settings —
+   ohne ihn erscheint das Widget zwar, aber jede Nachricht wird mit einem Fehler
+   abgewiesen.
+
+`botName`, `salutation` und `maxIndexPagesFullSitemap` wirken serverseitig ebenfalls
+nur, wenn sie aus den Site Settings stammen - über Weg B beeinflussen sie
+ausschließlich die Anzeige des Widgets, weil die Chat-Middleware bereits läuft,
+bevor TYPO3 das TypoScript auflöst, und Konstanten aus einem `sys_template` dort
+deshalb nicht zur Verfügung stehen.
 
 ### Kontrolle, ob die Einbindung greift
 
@@ -113,8 +123,8 @@ zugewiesen werden, auch wenn sonst ausschließlich mit statischem TypoScript
 | --- | --- | --- |
 | `enabled` | aus | Widget im Frontend einblenden |
 | `botName` | Assistent | Anzeigename in Kopfzeile und vor jeder Antwort |
+| `headingLevel` | 2 | Überschriften-Ebene im Chatfenster (2 bis 6). Sollte zur Überschriften-Gliederung der Website passen, damit der Chat die Gliederung der Seite nicht stört. |
 | `salutation` | sie | Anrede der Antworten (`sie` oder `du`) |
-| `autoNavigate` | an | Auf ausdrücklichen Wunsch selbst zur Zielseite wechseln |
 | `privacyPageUid` | 0 | Seite mit der Datenschutzerklärung (0 = kein Link) |
 | `contactPageUid` | 0 | Kontaktseite als Fallback (0 = keine Seite) |
 | `maxIndexPagesFullSitemap` | 150 | Ab dieser Anzahl indexierter Seiten bekommt der Assistent nur noch die oberen Ebenen des Seitenbaums (bis Ebene 2) statt der vollständigen Seitenliste |
@@ -122,6 +132,53 @@ zugewiesen werden, auch wenn sonst ausschließlich mit statischem TypoScript
 Alle sichtbaren Texte liegen in `Resources/Private/Language/locallang.xlf`
 (englische Quelldatei) und `de.locallang.xlf` (deutsche Übersetzung) und lassen
 sich projektspezifisch über `locallangXMLOverride` überschreiben.
+
+## Barrierefreiheit im Gesprächsverlauf
+
+Seit Phase 5 ist der Gesprächsverlauf keine Live-Region mehr (kein `role="log"`,
+kein `aria-live` auf der Nachrichtenliste). Stattdessen gibt es eine
+Zwei-Ebenen-Struktur:
+
+- Der Verlauf selbst ist eine benannte Region (`role="region"`) mit einer
+  visuell versteckten Überschrift und einem versteckten Bedienhinweis.
+- Neue Antworten werden über die bereits vorhandene Statuszeile angesagt:
+  kurze Antworten im Volltext, lange Antworten nur als kurze Meldung. Der
+  vollständige Text steht in jedem Fall im Verlauf.
+
+Innerhalb des Verlaufs lässt sich mit den Pfeiltasten ↓ und ↑ von Nachricht zu
+Nachricht springen, `Pos 1` springt zur ersten Nachricht und `Ende` zur
+letzten. Die Tab-Reihenfolge der übrigen Seite bleibt davon unberührt.
+
+**Spracheingabe ohne Unterstützung:** Fehlt die Web Speech API im Browser
+(zum Beispiel Firefox in der Standardeinstellung) oder läuft die Seite nicht
+über eine sichere Verbindung (kein HTTPS und nicht `localhost`), erscheint
+statt des Mikrofon-Knopfs ein sichtbarer Hinweistext unter dem Eingabefeld.
+Das Widget selbst bleibt in jedem Fall vollständig bedienbar - die
+Spracheingabe ist immer nur eine Ergänzung zur Texteingabe.
+
+## Navigation zu einer Seite
+
+Seit Phase 6 kann der Assistent nicht nur Fragen beantworten, sondern auch
+zu einer passenden Seite führen - zum Beispiel auf "Bring mich zur
+Kontaktseite".
+
+- **Der Assistent schlägt nur vor, ausgelöst wird nichts von selbst.** Die
+  Antwort enthält dafür einen deutlich gestalteten Knopf. Erst wenn dieser
+  Knopf betätigt wird, wechselt die Seite. Es gibt dafür weder einen Timer
+  noch eine Einstellung, die das automatisch machen würde.
+- **Das Ziel wird serverseitig geprüft**, und zwar gegen die Seiten, die für
+  diese Anfrage freigegeben waren - also gegen Seiten, die der Besucher
+  ohnehin selbst erreichen könnte. Versteckte, abgelaufene oder
+  zugriffsgeschützte Seiten können deshalb niemals ein Ziel sein.
+- **Die Adresse erzeugt immer TYPO3 selbst** über seine eigene
+  Seiten-Verlinkung - niemals der KI-Dienst.
+- **Nach dem Seitenwechsel** wird der bisherige Gesprächsverlauf vollständig
+  wiederhergestellt, das Chatfenster behält seinen offenen oder geschlossenen
+  Zustand, und im Verlauf erscheint eine Bestätigungszeile. Der Tastaturfokus
+  wird dabei absichtlich nicht verschoben.
+- **Bei Mehrdeutigkeit** (mehrere Seiten könnten gemeint sein) stellt der
+  Assistent stattdessen eine Rückfrage mit Auswahlknöpfen. Diese Knöpfe
+  beantworten nur die Rückfrage und navigieren nicht.
 
 ## API-Key einrichten
 
@@ -369,7 +426,7 @@ Die automatische Aktualisierung nutzt die klassischen DataHandler-Hooks
 diese beiden Zeitpunkte nachweislich kein PSR-14-Event; die Hooks sind der
 einzige Weg. Nach Stand des v14-Changelogs sind beide Hooks dort unverändert
 vorhanden - es gibt keinen Breaking- oder Deprecation-Eintrag dazu. Das ist
-noch keine endgültige Bestätigung: in Phase 7 (Kompatibilität) wird das an
+noch keine endgültige Bestätigung: in Phase 9 (Kompatibilität) wird das an
 einer echten v14-Installation überprüft. Die Registrierung steht deshalb
 bewusst an genau einer Stelle (`ext_localconf.php`) und ist dort leicht
 austauschbar.
@@ -420,11 +477,18 @@ und Betreiber sind für die Prüfung selbst verantwortlich.
 | Jede Nachricht endet mit "nicht erreichbar" | Admin Tools, Maintenance, Analyze Database Structure ausführen (Cache-Tabellen fehlen). Danach Admin Tools, Log prüfen. |
 | Im Browser erscheint ein CSP-Fehler | Ist eine Content Security Policy aktiv, muss `connect-src` mindestens `'self'` erlauben. |
 | Antwort dauert und bricht dann ab | Der Server hält insgesamt höchstens 30 Sekunden durch, auch wenn er die Anfrage zwischendurch wiederholen muss. Der Browser bricht nach 35 Sekunden ab. |
-| Chat antwortet immer mit "Diese Anfrage war nicht erlaubt. Bitte lade die Seite neu und versuche es noch einmal." | Site Set "Barrierefreier Chatbot" ist der Site nicht zugewiesen (siehe "Wichtig bei Weg B") - oder der Schalter "Chatbot aktivieren" in den Site Settings ist ausgeschaltet. |
+| Chat antwortet immer mit "Diese Anfrage war nicht erlaubt. Bitte die Seite neu laden und es noch einmal versuchen." | Site Set "Barrierefreier Chatbot" ist der Site nicht zugewiesen (siehe "Wichtig bei Weg B") - oder der Schalter "Chatbot aktivieren" in den Site Settings ist ausgeschaltet. |
 | `accessible-chatbot:index` meldet "Table 'tx_accessiblechatbot_index' doesn't exist" | Admin Tools, Maintenance, **Analyze Database Structure** ausführen. |
 | Der Befehl meldet "Es ist keine Website konfiguriert" | Unter Site Management, Sites muss mindestens eine Website mit Startseite angelegt sein. |
 | Eine versteckte Seite steht trotzdem im Index | Erst prüfen, ob es wirklich dieselbe Seite ist (Übersetzungen sind eigene Datensätze). Dann `accessible-chatbot:index` erneut ausführen und Admin Tools, Log prüfen. |
 | Eine sichtbare Seite fehlt im Index | Häufigste Ursachen: Haken "In Suche ausschließen", Seitentyp Systemordner/Trenner, oder eine übergeordnete Seite mit "Für Unterseiten übernehmen" und Einschränkung. |
+| Der Assistent bietet keinen Knopf an, obwohl ausdrücklich nach dem Weg gefragt wurde | Die Zielseite steht nicht im Index oder ist gerade nicht sichtbar, oder der KI-Dienst hat als normale Antwort geantwortet. Admin Tools, Log prüfen: `Navigation target rejected` bedeutet, dass ein Ziel vorgeschlagen wurde, das nicht erlaubt war - die Antwort wird dann ganz normal als Text ausgegeben. |
+
+**Hinweis für bestehende Installationen:** Die Einstellung `accessiblechatbot.autoNavigate`
+wurde mit Phase 6 entfernt, weil sie durch das serverseitig geprüfte
+Navigationsangebot ersetzt wurde. Steht sie noch in der `settings.yaml` einer
+Site, richtet das keinen Schaden an, ist aber überflüssig geworden und sollte
+von Hand entfernt werden.
 
 ## Verhalten ohne JavaScript
 
@@ -448,10 +512,11 @@ wird. Es findet keinerlei serverseitige Speicherung statt.
 Spracherkennung des Browsers (Web Speech API). Chrome, Edge und Safari übertragen
 die Aufnahme dabei an die Spracherkennungs-Dienste ihres jeweiligen Herstellers -
 nicht an diese Website und nicht an den KI-Dienst. Firefox unterstützt die Funktion
-standardmäßig nicht; dort erscheint der Knopf gar nicht erst. Ein entsprechender
-Hinweis wird im Widget direkt unter dem Eingabefeld angezeigt, sobald der Knopf
-verfügbar ist. Betreiberinnen und Betreiber sollten diesen Datenfluss in ihrer
-Datenschutzerklärung erwähnen.
+standardmäßig nicht; dort erscheint der Knopf gar nicht erst, sondern an
+seiner Stelle ein sichtbarer Hinweistext (siehe Abschnitt „Barrierefreiheit
+im Gesprächsverlauf"). Ist die Spracheingabe verfügbar, steht unter dem
+Eingabefeld stattdessen der Hinweis auf diesen Datenfluss. Betreiberinnen und
+Betreiber sollten diesen Datenfluss in ihrer Datenschutzerklärung erwähnen.
 
 ## Lizenz
 

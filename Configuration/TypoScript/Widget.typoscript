@@ -21,7 +21,7 @@ page.9990 {
     templateName = Widget
     templateRootPaths.10 = EXT:accessible_chatbot/Resources/Private/Templates/
 
-    # Hinweis zu den Wahrheitswerten (enabled/autoNavigate):
+    # Hinweis zum Wahrheitswert "enabled":
     # Ein ausgeschaltetes bool-Site-Setting wird zu einem LEEREN String,
     # ein ausgeschalteter Constant-Editor-Wert dagegen zu "0". Im Markup
     # steht deshalb je nach Einbindungsweg "", "0" oder "1".
@@ -29,8 +29,8 @@ page.9990 {
     # niemals nur auf "wahrheitsartig" (=== '1', nicht if (wert)).
     settings {
         botName = {$accessiblechatbot.botName}
+        headingLevel = {$accessiblechatbot.headingLevel}
         salutation = {$accessiblechatbot.salutation}
-        autoNavigate = {$accessiblechatbot.autoNavigate}
         privacyPageUid = {$accessiblechatbot.privacyPageUid}
         contactPageUid = {$accessiblechatbot.contactPageUid}
     }

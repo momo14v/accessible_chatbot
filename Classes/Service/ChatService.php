@@ -34,6 +34,9 @@ final class ChatService
     /** Konzept 4.5: hoechstens drei Quellseiten, sonst wird die Antwort unuebersichtlich. */
     private const MAX_SOURCE_LINKS = 3;
 
+    /** Rueckfrage: wenige, klare Optionen (COGA 4.5). */
+    private const MAX_CLARIFY_CHOICES = 3;
+
     public function __construct(
         private readonly ConfigurationProvider $configurationProvider,
         private readonly PromptBuilder $promptBuilder,
@@ -104,21 +107,59 @@ final class ChatService
             ),
         );
 
-        $sources = $this->sourceLinks($result, $retrieval, $site, $language);
+        // Navigationsangebot (Konzept 4.5). Geprueft wird gegen GENAU DIE
+        // Seiten, die in dieser Anfrage an die KI gegangen sind.
+        $navigation = $this->navigationTarget($result, $retrieval, $site, $language);
+
+        // Bei einer Rueckfrage ersetzen die Auswahlknoepfe die Quellenlinks.
+        // Ein Link wuerde die Seite wechseln; der Knopf schickt nur eine
+        // Praezisierung (WCAG 3.2.2). Beides gleichzeitig waere widerspruechlich.
+        $isClarify = $result->action === ChatAction::Clarify;
+        $sources = $isClarify ? [] : $this->sourceLinks($result, $retrieval, $site, $language);
+        $choices = $isClarify ? $this->clarifyChoices($result, $retrieval) : [];
+
+        // Ein Navigationsangebot ersetzt den Quellenlink auf dieselbe Seite -
+        // zwei Links auf dasselbe Ziel waeren fuer Screenreader-Nutzende
+        // doppelt und verwirrend (gleiche Ueberlegung wie bei clarify).
+        if ($navigation !== null) {
+            $sources = array_values(array_filter(
+                $sources,
+                static fn (ChatLink $link): bool => $link->url !== $navigation->url
+            ));
+        }
+
+        // Downgrade (Konzept 4.5): ein ungueltiges Ziel ist KEIN Fehler.
+        // Der Nutzer bekommt dann eine ganz normale Textantwort.
+        $downgraded = $result->action === ChatAction::Navigate && $navigation === null;
+
+        // Eine Rueckfrage ohne Auswahlmoeglichkeiten ist ebenfalls eine
+        // Sackgasse: "Meinst du X oder Y?" ohne Knoepfe. Passiert in der
+        // dritten Rueckfallstufe, in der die KI gar keine Seiten-UIDs
+        // liefert. Wird deshalb genauso behandelt.
+        $emptyClarify = $isClarify && $choices === [];
+
+        $action = $downgraded || $emptyClarify ? ChatAction::Answer : $result->action;
 
         return new ChatReply(
             $result->reply,
-            $result->action,
-            // Navigation wird erst in Phase 5 ausgewertet - der Wert wird
-            // hier nur durchgereicht, nicht benutzt.
-            $result->targetPageUid,
+            $action,
+            $navigation,
             $sources,
+            $choices,
             // "Weiss ich nicht" (Review Phase 4, S4): entscheidend ist
             // ausschliesslich "answer_found", NICHT die Quellenliste. In
-            // Rueckfallstufe 3 und im Parse-Fallback ist $sources IMMER
-            // leer - waere die Kontaktseite an $sources gekoppelt, bekaeme
-            // dort jede Antwort faelschlich den "weiss ich nicht"-Hinweis.
-            !$result->answerFound && $result->action !== ChatAction::Clarify,
+            // Rueckfallstufe 3 und im Parse-Fallback ist $sources IMMER leer -
+            // waere die Kontaktseite an $sources gekoppelt, bekaeme dort jede
+            // Antwort faelschlich den "weiss ich nicht"-Hinweis.
+            //
+            // Zusaetzlich seit dem Phase-6-Review: bei einem abgewiesenen
+            // Navigationsziel und bei einer Rueckfrage ohne Auswahl kuendigt
+            // der Antworttext einen Weg an, den es nicht gibt. Dann MUSS
+            // wenigstens die Kontaktseite angeboten werden - sonst steht der
+            // Nutzer vor einer Sackgasse (Konzept 3.5, 8.6).
+            $downgraded
+                || $emptyClarify
+                || (!$result->answerFound && $result->action === ChatAction::Answer),
         );
     }
 
@@ -162,6 +203,112 @@ final class ChatService
         }
 
         return $links;
+    }
+
+    /**
+     * Prueft ein von der KI vorgeschlagenes Navigationsziel (Konzept 4.5, 7).
+     *
+     * DAS IST DIE SICHERHEITSSTELLE dieser Phase. Erlaubt ist eine UID nur,
+     * wenn sie in GENAU DIESER Anfrage an die KI gegangen ist - als Treffer
+     * oder als Zeile der Seitenliste. Beide Mengen hat der RetrievalService
+     * vorher live gegen die aktuelle Sichtbarkeit geprueft; sie enthalten
+     * damit ausschliesslich Seiten, die der Besucher auch selbst erreichen
+     * koennte. Erfundene UIDs, UIDs aus einer Prompt-Injection und UIDs
+     * versteckter, abgelaufener oder geschuetzter Seiten fallen hier raus.
+     *
+     * Die Adresse baut ausschliesslich der TYPO3-Site-Router - eine von der
+     * KI gelieferte Zeichenkette wird nie als Adresse verwendet.
+     */
+    private function navigationTarget(
+        AiResult $result,
+        RetrievalResult $retrieval,
+        Site $site,
+        SiteLanguage $language
+    ): ?ChatLink {
+        if ($result->action !== ChatAction::Navigate || $result->targetPageUid === null) {
+            return null;
+        }
+
+        $allowed = self::allowedPages($retrieval);
+
+        if (!isset($allowed[$result->targetPageUid])) {
+            // Nur die Seiten-UID, niemals Nachrichteninhalte (Konzept 3.6).
+            // Ohne dieses Protokoll wuerde ein dauerhaft falsch vorschlagendes
+            // Modell nie auffallen.
+            $this->logger->warning(
+                'Navigation target rejected: page {page} was not delivered to the AI in this request.',
+                ['page' => $result->targetPageUid]
+            );
+
+            return null;
+        }
+
+        $url = $this->pageUrl($site, $language, $result->targetPageUid);
+
+        return $url === null ? null : new ChatLink($url, $allowed[$result->targetPageUid]);
+    }
+
+    /**
+     * Auswahlmoeglichkeiten einer Rueckfrage (Konzept 4.5, "Mehrdeutigkeit").
+     *
+     * Bewusst nur TITEL und keine Adressen: die Knoepfe senden eine
+     * Praezisierung, sie navigieren nicht. Der Titel kommt aus dem
+     * Inhaltsindex - der von der KI gelieferte Text landet NIE auf einem
+     * Knopf. Gleiche Titel werden ausgelassen, sonst staenden zwei nicht
+     * unterscheidbare Knoepfe nebeneinander.
+     *
+     * @return list<string>
+     */
+    private function clarifyChoices(AiResult $result, RetrievalResult $retrieval): array
+    {
+        $allowed = self::allowedPages($retrieval);
+
+        $choices = [];
+        foreach ($result->sourcePageUids as $pageUid) {
+            $title = $allowed[$pageUid] ?? '';
+
+            if ($title === '' || in_array($title, $choices, true)) {
+                continue;
+            }
+
+            $choices[] = $title;
+
+            if (count($choices) >= self::MAX_CLARIFY_CHOICES) {
+                break;
+            }
+        }
+
+        return $choices;
+    }
+
+    /**
+     * Die Whitelist dieser einen Anfrage: Trefferliste UND Seitenliste
+     * (Konzept 4.5). Treffer stehen bewusst zuletzt - bei gleicher UID
+     * gewinnt ihr Titel.
+     *
+     * BEWUSSTE, DOKUMENTIERTE UNSCHAERFE: der PromptBuilder kann die
+     * Seitenliste am Zeichenbudget kappen; einzelne Eintraege von hier sind
+     * dann gar nicht bei der KI angekommen. Sicherheitsrelevant ist das
+     * nicht - jeder Eintrag hat die Live-Sichtbarkeitspruefung bestanden und
+     * ist damit eine Seite, die der Besucher selbst erreichen koennte. Die
+     * exakt gelieferte Menge zurueckzureichen waere Mehraufwand ohne
+     * Sicherheitsgewinn.
+     *
+     * @return array<int, string> Seiten-UID => Titel
+     */
+    private static function allowedPages(RetrievalResult $retrieval): array
+    {
+        $allowed = [];
+
+        foreach ($retrieval->sitemap as $entry) {
+            $allowed[$entry->pageUid] = $entry->title;
+        }
+
+        foreach ($retrieval->hits as $hit) {
+            $allowed[$hit->pageUid] = $hit->title;
+        }
+
+        return $allowed;
     }
 
     /**

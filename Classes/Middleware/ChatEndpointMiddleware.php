@@ -179,9 +179,20 @@ final class ChatEndpointMiddleware implements MiddlewareInterface
         return $this->jsonResponse(
             [
                 'reply' => $reply->reply,
-                // action und targetPageUid werden erst ab Phase 5 ausgewertet.
+                // Nur zur Fehlersuche im Netzwerk-Protokoll. Das Widget
+                // wertet dieses Feld bewusst NICHT aus: alle Entscheidungen
+                // fallen serverseitig (Konzept 6.1).
                 'action' => $reply->action->value,
-                'targetPageUid' => $reply->targetPageUid,
+                // Navigationsangebot (Konzept 4.5). Der Server liefert eine
+                // FERTIGE, vom TYPO3-Router erzeugte Adresse. Eine Seiten-UID
+                // verlaesst den Server bewusst nicht mehr - das Widget soll gar
+                // nicht erst in die Lage kommen, selbst eine Adresse zu bauen.
+                'navigation' => $reply->navigation === null ? null : [
+                    'url' => $reply->navigation->url,
+                    'title' => $reply->navigation->title,
+                ],
+                // Auswahltitel einer Rueckfrage (nur bei action = clarify).
+                'choices' => $reply->choices,
                 // Quellseiten der Antwort. Die Adressen stammen
                 // ausschliesslich vom TYPO3-Router (ChatService).
                 'sources' => array_map(

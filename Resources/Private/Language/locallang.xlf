@@ -24,6 +24,9 @@
             <trans-unit id="widget.log.label">
                 <source>Conversation</source>
             </trans-unit>
+            <trans-unit id="widget.log.hint">
+                <source>Use the arrow keys down and up to move from message to message. Home goes to the first message, End to the last one.</source>
+            </trans-unit>
             <trans-unit id="message.sender.user">
                 <source>You:</source>
             </trans-unit>
@@ -35,6 +38,9 @@
             </trans-unit>
             <trans-unit id="status.typing">
                 <source>%s is writing an answer …</source>
+            </trans-unit>
+            <trans-unit id="status.newanswer">
+                <source>New answer from %s. You can read it in the conversation.</source>
             </trans-unit>
             <trans-unit id="error.empty">
                 <source>Please write a message first.</source>
@@ -65,6 +71,9 @@
             </trans-unit>
             <trans-unit id="mic.status.error">
                 <source>Voice input did not work. Please type your message instead.</source>
+            </trans-unit>
+            <trans-unit id="mic.status.unavailable">
+                <source>Voice input does not work here. Your browser does not support it, or this page is not using a secure connection. Please type your message instead.</source>
             </trans-unit>
             <trans-unit id="option.genderstyle.legend">
                 <source>Wording of the answers</source>
@@ -128,6 +137,18 @@
             </trans-unit>
             <trans-unit id="message.contacthint">
                 <source>Maybe the contact page can help you:</source>
+            </trans-unit>
+            <trans-unit id="message.navigate.button">
+                <source>Go to the page "%s" now</source>
+            </trans-unit>
+            <trans-unit id="message.navigate.arrived">
+                <source>The page "%s" is now open.</source>
+            </trans-unit>
+            <trans-unit id="message.clarify.intro">
+                <source>Please choose:</source>
+            </trans-unit>
+            <trans-unit id="message.clarify.option">
+                <source>I mean: %s</source>
             </trans-unit>
         </body>
     </file>

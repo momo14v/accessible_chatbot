@@ -19,6 +19,8 @@
  *   #8a4b00 auf #ffffff =  5.9:1  Rahmen der Hinweiszeilen (>= 3:1)
  *   #005a9c auf #fdf3e7 =  6.6:1  Kontaktseiten-Link in Hinweiszeilen
  *   #ffffff auf #565656 =  7.3:1  Text auf dem gesperrten Sende-Knopf
+ *   #ffffff auf #005a9c =  7.1:1  Navigationsknopf
+ *   #1b1b1b auf #e3edf7 = 14.5:1  Ankunftszeile, Auswahlknopf Hover
  *
  * Alle Groessen in rem, damit die Browser-Schriftgroesse und Zoom greifen.
  */
@@ -58,6 +60,10 @@
    uebersteuern - Element-Selektoren der Site wuerden sonst gegen die
    blosse Vererbung gewinnen. */
 .acb-widget h2,
+.acb-widget h3,
+.acb-widget h4,
+.acb-widget h5,
+.acb-widget h6,
 .acb-widget p,
 .acb-widget ul,
 .acb-widget li,
@@ -215,7 +221,7 @@
     flex: 1 1 auto;
     min-height: 3rem;
     overflow-y: auto;
-    padding: 0.75rem 1rem;
+    padding: 1rem 1rem;
 }
 
 .acb-log__list {
@@ -265,6 +271,18 @@
     border-color: #8a4b00;
 }
 
+/*
+ * Eine per Pfeiltaste angesprungene Nachricht muss sichtbar fokussiert sein
+ * (Konzept 8.4). Bewusst :focus und nicht nur :focus-visible: der Fokus wird
+ * hier per JavaScript gesetzt, und nicht jeder Browser wertet das zuverlaessig
+ * als "per Tastatur" - ohne diese Regel bliebe der Sprung unsichtbar.
+ */
+.acb-widget .acb-msg:focus {
+    outline: 0.1875rem solid #1b1b1b;
+    outline-offset: 0.125rem;
+    box-shadow: 0 0 0 0.4375rem #ffffff;
+}
+
 /* Kontaktseiten-Link in einer Hinweiszeile.
    Kontrast #005a9c auf #fdf3e7 = 6.6:1 - der Link ist zusaetzlich
    unterstrichen, haengt also nicht allein an der Farbe. */
@@ -310,6 +328,96 @@
 
 .acb-msg__sender {
     font-weight: 700;
+}
+
+/* ---------- Navigationsangebot und Rueckfrage ---------- */
+
+/*
+ * Handlungsangebot innerhalb einer Bot-Nachricht (Konzept 4.5).
+ * Abgesetzt durch eine Trennlinie, damit es sich sichtbar vom Antworttext
+ * abhebt - nicht durch Farbe allein (WCAG 1.4.1).
+ */
+.acb-msg__actions {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 0.0625rem solid #767676;
+}
+
+.acb-msg__actions-intro {
+    display: block;
+    margin-bottom: 0.5rem;
+}
+
+/*
+ * Zielgroesse (Konzept 8.5, WCAG 2.5.8): Hauptaktionen mindestens
+ * 44 x 44 px. 2.75rem entspricht bei Standard-Schriftgroesse 44 px und
+ * waechst mit der eingestellten Schriftgroesse mit.
+ */
+.acb-navigate,
+.acb-choice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.25rem;
+    text-align: center;
+}
+
+/*
+ * Der Navigationsknopf ist technisch ein Link (siehe chatbot.js). Die
+ * Spezifitaet 0-2-1 ist noetig, um die Regel ".acb-widget a { color: inherit }"
+ * zu schlagen - dieselbe Ueberlegung wie bei .acb-msg__link.
+ * Kontrast #ffffff auf #005a9c = 7.1:1. Zusaetzlich unterstrichen, damit er
+ * auch ohne Farbwahrnehmung als Link erkennbar bleibt.
+ */
+.acb-widget a.acb-navigate {
+    background-color: #005a9c;
+    color: #ffffff;
+    text-decoration: underline;
+}
+
+.acb-widget a.acb-navigate:hover {
+    background-color: #00426f;
+}
+
+.acb-msg__choices {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/*
+ * Auswahlknopf einer Rueckfrage. Bewusst anders gestaltet als der
+ * Navigationsknopf: er schickt nur eine Praezisierung, er wechselt die Seite
+ * nicht. Kontrast Text #1b1b1b auf #ffffff = 17.2:1, Rahmen #005a9c auf
+ * #ffffff = 7.1:1 (>= 3:1).
+ */
+.acb-choice {
+    background-color: #ffffff;
+    border: 0.125rem solid #005a9c;
+}
+
+.acb-choice:hover {
+    background-color: #e3edf7;
+}
+
+/*
+ * Bestaetigung nach einer bestaetigten Navigation (Konzept 4.5).
+ * Neutral gehalten - es ist keine Stoerung, sondern eine Information.
+ * Erkennbar am sichtbaren Vorspann "Hinweis:" und an der Rahmenstaerke,
+ * nicht allein an der Farbe (WCAG 1.4.1).
+ * Kontrast Text #1b1b1b auf #e3edf7 = 14.5:1.
+ */
+.acb-msg--arrival {
+    align-self: stretch;
+    background-color: #e3edf7;
+    border-width: 0.125rem;
+    border-color: #005a9c;
 }
 
 /* ---------- Statuszeile (Mikrofon) ---------- */
@@ -484,7 +592,9 @@
 
     .acb-toggle,
     .acb-send,
-    .acb-mic {
+    .acb-mic,
+    .acb-navigate,
+    .acb-choice {
         transition: background-color 120ms ease-out, border-width 120ms ease-out;
     }
 }
@@ -533,7 +643,9 @@
     .acb-toggle,
     .acb-close,
     .acb-mic,
-    .acb-send {
+    .acb-send,
+    .acb-navigate,
+    .acb-choice {
         border: 0.125rem solid ButtonText;
     }
 }

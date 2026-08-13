@@ -21,7 +21,7 @@
             </trans-unit>
             <trans-unit id="widget.transparency">
                 <source>Your messages are sent to an AI service so that they can be answered. They are not stored permanently.</source>
-                <target>Deine Nachrichten werden zur Beantwortung an einen KI-Dienst übermittelt und nicht dauerhaft gespeichert.</target>
+                <target>Nachrichten aus diesem Chat werden zur Beantwortung an einen KI-Dienst übermittelt. Sie werden nicht dauerhaft gespeichert.</target>
             </trans-unit>
             <trans-unit id="widget.privacy.link">
                 <source>Privacy policy</source>
@@ -31,9 +31,13 @@
                 <source>Conversation</source>
                 <target>Gesprächsverlauf</target>
             </trans-unit>
+            <trans-unit id="widget.log.hint">
+                <source>Use the arrow keys down and up to move from message to message. Home goes to the first message, End to the last one.</source>
+                <target>Mit den Pfeiltasten nach unten und oben geht es von Nachricht zu Nachricht. Pos 1 springt zur ersten Nachricht, Ende zur letzten.</target>
+            </trans-unit>
             <trans-unit id="message.sender.user">
                 <source>You:</source>
-                <target>Du:</target>
+                <target>Eigene Nachricht:</target>
             </trans-unit>
             <trans-unit id="message.sender.bot">
                 <source>%s:</source>
@@ -41,19 +45,23 @@
             </trans-unit>
             <trans-unit id="message.greeting">
                 <source>Hello! I am %s, the assistant for this website. I answer questions about the content of this website and I can take you to the right page.</source>
-                <target>Hallo! Ich bin %s, der Assistent dieser Website. Ich beantworte Fragen zu den Inhalten dieser Website und bringe dich auf Wunsch zur passenden Seite.</target>
+                <target>Hallo! Ich bin %s, der Assistent dieser Website. Ich beantworte Fragen zu den Inhalten dieser Website und zeige auf Wunsch den Weg zur passenden Seite.</target>
             </trans-unit>
             <trans-unit id="status.typing">
                 <source>%s is writing an answer …</source>
                 <target>%s schreibt eine Antwort …</target>
             </trans-unit>
+            <trans-unit id="status.newanswer">
+                <source>New answer from %s. You can read it in the conversation.</source>
+                <target>Neue Antwort von %s. Sie steht im Gesprächsverlauf.</target>
+            </trans-unit>
             <trans-unit id="error.empty">
                 <source>Please write a message first.</source>
-                <target>Bitte schreibe zuerst eine Nachricht.</target>
+                <target>Bitte zuerst eine Nachricht schreiben.</target>
             </trans-unit>
             <trans-unit id="form.input.label">
                 <source>Your message</source>
-                <target>Deine Nachricht</target>
+                <target>Nachricht</target>
             </trans-unit>
             <trans-unit id="form.send">
                 <source>Send</source>
@@ -69,7 +77,7 @@
             </trans-unit>
             <trans-unit id="mic.status.recognized">
                 <source>Text recognised. Please check it and press Send.</source>
-                <target>Text erkannt. Bitte prüfe ihn und drücke auf Senden.</target>
+                <target>Text erkannt. Bitte den Text prüfen und dann auf Senden drücken.</target>
             </trans-unit>
             <trans-unit id="mic.status.stopped">
                 <source>Voice input stopped.</source>
@@ -77,15 +85,19 @@
             </trans-unit>
             <trans-unit id="mic.status.nospeech">
                 <source>I did not hear anything. Please try again.</source>
-                <target>Ich habe nichts gehört. Bitte versuche es noch einmal.</target>
+                <target>Ich habe nichts gehört. Bitte noch einmal versuchen.</target>
             </trans-unit>
             <trans-unit id="mic.status.denied">
                 <source>Access to the microphone was not allowed. Please allow it in your browser.</source>
-                <target>Der Zugriff auf das Mikrofon wurde nicht erlaubt. Bitte erlaube ihn in deinem Browser.</target>
+                <target>Der Zugriff auf das Mikrofon wurde nicht erlaubt. Bitte den Zugriff im Browser erlauben.</target>
             </trans-unit>
             <trans-unit id="mic.status.error">
                 <source>Voice input did not work. Please type your message instead.</source>
-                <target>Die Spracheingabe hat nicht funktioniert. Bitte tippe deine Nachricht stattdessen ein.</target>
+                <target>Die Spracheingabe hat nicht funktioniert. Bitte die Nachricht stattdessen eintippen.</target>
+            </trans-unit>
+            <trans-unit id="mic.status.unavailable">
+                <source>Voice input does not work here. Your browser does not support it, or this page is not using a secure connection. Please type your message instead.</source>
+                <target>Die Spracheingabe funktioniert hier nicht. Der Browser unterstützt sie nicht, oder die Seite läuft nicht über eine sichere Verbindung. Bitte die Nachricht eintippen.</target>
             </trans-unit>
             <trans-unit id="option.genderstyle.legend">
                 <source>Wording of the answers</source>
@@ -105,11 +117,11 @@
             </trans-unit>
             <trans-unit id="error.request">
                 <source>The assistant cannot be reached at the moment. Please try again in a moment.</source>
-                <target>Der Assistent ist gerade nicht erreichbar. Bitte versuche es gleich noch einmal.</target>
+                <target>Der Assistent ist gerade nicht erreichbar. Bitte gleich noch einmal versuchen.</target>
             </trans-unit>
             <trans-unit id="mic.hint">
                 <source>Note: your browser sends the recording to its own speech recognition service. You can also type your message instead.</source>
-                <target>Hinweis: Dein Browser sendet die Aufnahme an seinen eigenen Spracherkennungs-Dienst. Du kannst deine Nachricht auch eintippen.</target>
+                <target>Hinweis: Der Browser sendet die Aufnahme an seinen eigenen Spracherkennungs-Dienst. Die Nachricht lässt sich auch eintippen.</target>
             </trans-unit>
             <trans-unit id="message.sender.system">
                 <source>Note:</source>
@@ -117,11 +129,11 @@
             </trans-unit>
             <trans-unit id="error.offline">
                 <source>You seem to be offline. Please check your internet connection and send the message again.</source>
-                <target>Du bist anscheinend offline. Bitte prüfe deine Internetverbindung und schicke die Nachricht noch einmal ab.</target>
+                <target>Es besteht anscheinend keine Internetverbindung. Bitte die Verbindung prüfen und die Nachricht noch einmal abschicken.</target>
             </trans-unit>
             <trans-unit id="error.timeout">
                 <source>The answer is taking too long. Please send your message again.</source>
-                <target>Die Antwort dauert zu lange. Bitte schicke deine Nachricht noch einmal ab.</target>
+                <target>Die Antwort dauert zu lange. Bitte die Nachricht noch einmal abschicken.</target>
             </trans-unit>
             <trans-unit id="error.contactlink">
                 <source>Go to the contact page</source>
@@ -129,35 +141,35 @@
             </trans-unit>
             <trans-unit id="error.ratelimit">
                 <source>You have sent many messages in a short time. Please wait a moment, then it will work again.</source>
-                <target>Du hast in kurzer Zeit viele Nachrichten geschickt. Bitte warte einen Moment, dann geht es weiter.</target>
+                <target>In kurzer Zeit wurden viele Nachrichten geschickt. Bitte einen Moment warten, dann geht es weiter.</target>
             </trans-unit>
             <trans-unit id="error.ratelimit.day">
                 <source>You have already sent many messages today. Please try again tomorrow.</source>
-                <target>Du hast heute schon viele Nachrichten geschickt. Bitte versuche es morgen wieder.</target>
+                <target>Heute wurden schon viele Nachrichten geschickt. Bitte morgen wieder versuchen.</target>
             </trans-unit>
             <trans-unit id="error.invalidrequest">
                 <source>Your message could not be processed. Please write a shorter message and try again.</source>
-                <target>Deine Nachricht konnte nicht verarbeitet werden. Bitte schreibe eine kürzere Nachricht und versuche es noch einmal.</target>
+                <target>Die Nachricht konnte nicht verarbeitet werden. Bitte eine kürzere Nachricht schreiben und es noch einmal versuchen.</target>
             </trans-unit>
             <trans-unit id="error.notconfigured">
                 <source>The assistant is not set up yet. Please tell the operator of this website.</source>
-                <target>Der Assistent ist noch nicht eingerichtet. Bitte sage der Betreiberin oder dem Betreiber dieser Website Bescheid.</target>
+                <target>Der Assistent ist noch nicht eingerichtet. Bitte der Betreiberin oder dem Betreiber dieser Website Bescheid sagen.</target>
             </trans-unit>
             <trans-unit id="error.busy">
                 <source>The assistant has a lot to do right now. Please try again in a few minutes.</source>
-                <target>Der Assistent hat gerade sehr viel zu tun. Bitte versuche es in ein paar Minuten noch einmal.</target>
+                <target>Der Assistent hat gerade sehr viel zu tun. Bitte in ein paar Minuten noch einmal versuchen.</target>
             </trans-unit>
             <trans-unit id="error.blocked">
                 <source>I cannot answer this question. Please ask me something about this website.</source>
-                <target>Diese Frage kann ich nicht beantworten. Bitte frage mich etwas zu dieser Website.</target>
+                <target>Diese Frage kann ich nicht beantworten. Bitte etwas zu dieser Website fragen.</target>
             </trans-unit>
             <trans-unit id="error.unavailable">
                 <source>The assistant cannot be reached at the moment. Please try again later.</source>
-                <target>Der Assistent ist gerade nicht erreichbar. Bitte versuche es später noch einmal.</target>
+                <target>Der Assistent ist gerade nicht erreichbar. Bitte später noch einmal versuchen.</target>
             </trans-unit>
             <trans-unit id="error.forbidden">
                 <source>This request was not allowed. Please reload the page and try again.</source>
-                <target>Diese Anfrage war nicht erlaubt. Bitte lade die Seite neu und versuche es noch einmal.</target>
+                <target>Diese Anfrage war nicht erlaubt. Bitte die Seite neu laden und es noch einmal versuchen.</target>
             </trans-unit>
             <trans-unit id="message.sources.one">
                 <source>Link to read more:</source>
@@ -169,7 +181,23 @@
             </trans-unit>
             <trans-unit id="message.contacthint">
                 <source>Maybe the contact page can help you:</source>
-                <target>Vielleicht hilft dir die Kontaktseite weiter:</target>
+                <target>Vielleicht hilft die Kontaktseite weiter:</target>
+            </trans-unit>
+            <trans-unit id="message.navigate.button">
+                <source>Go to the page "%s" now</source>
+                <target>Jetzt zur Seite „%s“ gehen</target>
+            </trans-unit>
+            <trans-unit id="message.navigate.arrived">
+                <source>The page "%s" is now open.</source>
+                <target>Die Seite „%s“ ist jetzt geöffnet.</target>
+            </trans-unit>
+            <trans-unit id="message.clarify.intro">
+                <source>Please choose:</source>
+                <target>Bitte auswählen:</target>
+            </trans-unit>
+            <trans-unit id="message.clarify.option">
+                <source>I mean: %s</source>
+                <target>Ich meine: %s</target>
             </trans-unit>
         </body>
     </file>

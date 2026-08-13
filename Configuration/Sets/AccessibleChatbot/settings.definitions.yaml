@@ -17,19 +17,19 @@ settings:
     type: string
     default: 'Assistent'
 
+  accessiblechatbot.headingLevel:
+    label: 'Überschriften-Ebene im Chatfenster'
+    description: 'Ebene der Überschrift im Chatfenster (2 bis 6). Sie sollte zur Überschriften-Gliederung der Website passen, damit der Chat die Gliederung der Seite nicht stört. Standard ist 2.'
+    category: accessiblechatbot
+    type: int
+    default: 2
+
   accessiblechatbot.salutation:
     label: 'Anrede der Antworten'
     description: 'Erlaubte Werte: "sie" oder "du". Legt fest, wie der Assistent die Besucherinnen und Besucher anspricht.'
     category: accessiblechatbot
     type: string
     default: 'sie'
-
-  accessiblechatbot.autoNavigate:
-    label: 'Automatisch navigieren'
-    description: 'Wenn aktiv, wechselt der Assistent auf ausdruecklichen Wunsch selbst zur gewuenschten Seite. Wenn aus, bietet er stattdessen nur einen Link an.'
-    category: accessiblechatbot
-    type: bool
-    default: true
 
   accessiblechatbot.privacyPageUid:
     label: 'Seite mit der Datenschutzerklaerung'

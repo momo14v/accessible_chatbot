@@ -8,8 +8,10 @@ namespace Extension14v\AccessibleChatbot\Http;
  * Die vom Besucher gewaehlte Sprachform (Konzept 3.8).
  *
  * Pair  = beide Formen ausschreiben ("Autorinnen und Autoren") - Standard.
- * Colon = Kurzform mit Doppelpunkt ("Autor:innen"). Bewusst der Doppelpunkt
- *         und nicht der Stern: Screenreader lesen ihn besser vor.
+ * Colon = Kurzform mit Doppelpunkt ("Autor:innen").
+ *
+ * Die Auswahl der Formen wird in Phase 7 nach CONCEPT 8.8 umgebaut
+ * (neutral als Default, Doppelpunkt entfaellt, Sternchen als Kurzform).
  */
 enum GenderStyle: string
 {
