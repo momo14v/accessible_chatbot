@@ -236,14 +236,16 @@ final class PromptBuilder
     }
 
     /**
-     * Die Auswahl der Formen wird in Phase 7 nach CONCEPT 8.8 umgebaut
-     * (neutral als Default, Doppelpunkt entfaellt, Sternchen als Kurzform).
+     * Die drei Sprachformen aus Konzept 8.8 (DBSV-Reihenfolge: neutral,
+     * beide Formen, Sternchen). Der Doppelpunkt ist keine Option mehr.
      */
     private function genderRule(GenderStyle $genderStyle): string
     {
-        $german = $genderStyle === GenderStyle::Colon
-            ? 'When you write in German, use the short inclusive form with a colon inside the word ("die Autor:innen", "die Mitarbeiter:innen"). Never use an asterisk or an underscore for this.'
-            : 'When you write in German, name both grammatical genders in full instead of using the generic masculine ("die Autorinnen und Autoren" instead of "die Autoren"). Do not put asterisks, colons or underscores inside words.';
+        $german = match ($genderStyle) {
+            GenderStyle::Neutral => 'When you write in German, prefer wording that names no grammatical gender at all instead of using the generic masculine (for example "das Team", "die Studierenden", "die Leitung" instead of "die Mitarbeiter"). Do not put asterisks, colons or underscores inside words.',
+            GenderStyle::Pair => 'When you write in German, name both grammatical genders in full instead of using the generic masculine ("die Autorinnen und Autoren" instead of "die Autoren"). Do not put asterisks, colons or underscores inside words.',
+            GenderStyle::Asterisk => 'When you write in German, use the short inclusive form with an asterisk inside the word ("die Autor*innen", "die Mitarbeiter*innen"). Never use a colon or an underscore for this.',
+        };
 
         return $german . ' In every other language, choose wording that includes all genders wherever the language offers it, and never put special characters inside words.';
     }

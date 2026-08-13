@@ -30,3 +30,12 @@ accessiblechatbot.contactPageUid = 0
 
 # cat=accessible chatbot/widget/070; type=int+; label=Seitenliste vollstaendig bis: Ab dieser Anzahl indexierter Seiten bekommt der Assistent nur noch die oberen Ebenen des Seitenbaums (bis Ebene 2) statt der vollstaendigen Liste.
 accessiblechatbot.maxIndexPagesFullSitemap = 150
+
+# cat=accessible chatbot/widget/035; type=options[neutral,pair,asterisk]; label=Voreingestellte Sprachform: neutral formulieren, beide Formen ausschreiben (pair) oder Kurzform mit Sternchen (asterisk).
+accessiblechatbot.genderStyleDefault = neutral
+
+# cat=accessible chatbot/widget/065; type=string; label=Vorgeschlagene Einstiegsfragen: Bis zu vier Fragen, getrennt durch einen senkrechten Strich "|". Leer = keine Vorschlaege.
+accessiblechatbot.starterQuestions =
+
+# cat=accessible chatbot/widget/067; type=boolean; label=Vorlesefunktion anbieten: Knopf "Antwort vorlesen" an jeder Antwort.
+accessiblechatbot.readAloudEnabled = 1

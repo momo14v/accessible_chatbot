@@ -31,6 +31,27 @@ settings:
     type: string
     default: 'sie'
 
+  accessiblechatbot.genderStyleDefault:
+    label: 'Voreingestellte Sprachform'
+    description: 'Erlaubte Werte: "neutral", "pair" oder "asterisk". neutral = ohne Geschlechtsbezug formulieren (Erstempfehlung des DBSV), pair = beide Formen ausschreiben, asterisk = Kurzform mit Sternchen. Besucherinnen und Besucher koennen die Form im Chatfenster selbst umstellen.'
+    category: accessiblechatbot
+    type: string
+    default: 'neutral'
+
+  accessiblechatbot.starterQuestions:
+    label: 'Vorgeschlagene Einstiegsfragen'
+    description: 'Bis zu vier Fragen, getrennt durch einen senkrechten Strich "|". Sie erscheinen als Knoepfe unter der Begruessung. Beispiel: Wann habt ihr geoeffnet?|Wo finde ich den Kontakt? Leer = keine Vorschlaege.'
+    category: accessiblechatbot
+    type: string
+    default: ''
+
+  accessiblechatbot.readAloudEnabled:
+    label: 'Vorlesefunktion anbieten'
+    description: 'Zeigt an jeder Antwort einen Knopf "Antwort vorlesen". Vorgelesen wird nur der Antworttext und nur nach einem Klick. Benoetigt die Sprachausgabe des Browsers.'
+    category: accessiblechatbot
+    type: bool
+    default: true
+
   accessiblechatbot.privacyPageUid:
     label: 'Seite mit der Datenschutzerklaerung'
     description: 'Wird als Link im Hinweistext des Chatfensters angezeigt. Keine Auswahl = kein Link.'
@@ -40,7 +61,7 @@ settings:
 
   accessiblechatbot.contactPageUid:
     label: 'Kontaktseite'
-    description: 'Fallback-Seite, auf die der Assistent verweist, wenn er etwas nicht weiss oder ein Fehler auftritt. Keine Auswahl = keine Seite.'
+    description: 'Weg zu einem Menschen (COGA 4.8.1). Der Link steht dauerhaft im Chatfenster, nicht nur im Fehlerfall. Faktische Pflichtangabe: ohne Kontaktseite hat der Chatbot keinen Notausgang. Keine Auswahl = kein Link.'
     category: accessiblechatbot
     type: page
     default: 0

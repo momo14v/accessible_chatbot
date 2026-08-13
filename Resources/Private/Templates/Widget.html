@@ -7,7 +7,9 @@
      data-acb-contact-url="{contactPageUrl}"
      data-acb-page-uid="{pageUid}"
      data-acb-language-uid="{languageUid}"
-     data-acb-base-path="{basePath}">
+     data-acb-base-path="{basePath}"
+     data-acb-gender-default="{settings.genderStyleDefault}"
+     data-acb-read-aloud="{settings.readAloudEnabled}">
 
     <div id="acb-dialog" class="acb-dialog" hidden>
 
@@ -46,9 +48,30 @@
             <p id="acb-log-hint" class="acb-visually-hidden"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.log.hint" /></p>
 
             <ul id="acb-log-list" class="acb-log__list" role="list">
-                <li class="acb-msg acb-msg--bot" tabindex="-1">
+                <li id="acb-greeting" class="acb-msg acb-msg--bot" tabindex="-1">
                     <span class="acb-msg__sender"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:message.sender.bot" arguments="{0: settings.botName}" /></span>
                     <span class="acb-msg__text"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:message.greeting" arguments="{0: settings.botName}" /></span>
+
+                    <f:if condition="{settings.starterQuestions}">
+                        <div id="acb-starters" class="acb-msg__actions">
+                            <span id="acb-starters-intro" class="acb-msg__actions-intro"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:starter.intro" /></span>
+                            <ul class="acb-msg__choices" role="list" aria-labelledby="acb-starters-intro">
+                                <f:for each="{f:split(value: settings.starterQuestions, separator: '|')}" as="starterQuestion" iteration="starterIteration">
+                                    <f:if condition="{starterIteration.index} < 4">
+                                        <f:if condition="{starterQuestion -> f:format.trim()}">
+                                            <li><button type="button" class="acb-starter"><f:format.trim value="{starterQuestion}" /></button></li>
+                                        </f:if>
+                                    </f:if>
+                                </f:for>
+                            </ul>
+                        </div>
+                    </f:if>
+
+                    <f:if condition="{settings.readAloudEnabled} == 1">
+                        <div class="acb-msg__tools">
+                            <button type="button" class="acb-speak"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:readaloud.start" /></button>
+                        </div>
+                    </f:if>
                 </li>
             </ul>
         </div>
@@ -66,7 +89,7 @@
                 <img class="acb-icon" src="{f:uri.resource(path: 'EXT:accessible_chatbot/Resources/Public/Icons/microphone.svg')}" width="24" height="24" alt="" />
                 <span class="acb-visually-hidden"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.label" /></span>
             </button>
-            <button type="submit" id="acb-send" class="acb-send"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:form.send" /></button>
+            <button type="submit" id="acb-send" class="acb-send" data-acb-mode="send"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:form.send" /></button>
         </form>
 
         <p id="acb-mic-hint" class="acb-mic-hint" hidden><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.hint" /></p>
@@ -75,15 +98,33 @@
         <fieldset class="acb-options">
             <legend class="acb-options__legend"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.legend" /></legend>
             <div class="acb-options__row">
-                <input type="radio" id="acb-gender-pair" name="acb-gender-style" value="pair" checked="checked" />
+                <input type="radio" id="acb-gender-neutral" name="acb-gender-style" value="neutral" />
+                <label for="acb-gender-neutral"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.neutral" /></label>
+            </div>
+            <div class="acb-options__row">
+                <input type="radio" id="acb-gender-pair" name="acb-gender-style" value="pair" />
                 <label for="acb-gender-pair"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.pair" /></label>
             </div>
             <div class="acb-options__row">
-                <input type="radio" id="acb-gender-colon" name="acb-gender-style" value="colon" />
-                <label for="acb-gender-colon"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.colon" /></label>
+                <input type="radio" id="acb-gender-asterisk" name="acb-gender-style" value="asterisk" />
+                <label for="acb-gender-asterisk"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.asterisk" /></label>
             </div>
             <p class="acb-options__hint"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.hint" /></p>
         </fieldset>
+
+        <div class="acb-actions">
+            <f:if condition="{settings.contactPageUid} > 0">
+                <f:link.page pageUid="{settings.contactPageUid}" class="acb-contact"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.contact" /></f:link.page>
+            </f:if>
+
+            <button type="button" id="acb-reset" class="acb-reset" aria-expanded="false" aria-controls="acb-reset-confirm"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.newconversation" /></button>
+
+            <div id="acb-reset-confirm" class="acb-confirm" role="group" aria-labelledby="acb-reset-question" hidden>
+                <p id="acb-reset-question" class="acb-confirm__question"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.newconversation.question" /></p>
+                <button type="button" id="acb-reset-yes" class="acb-confirm__button" aria-describedby="acb-reset-question"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.newconversation.confirm" /></button>
+                <button type="button" id="acb-reset-no" class="acb-confirm__button" aria-describedby="acb-reset-question"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.newconversation.cancel" /></button>
+            </div>
+        </div>
     </div>
 
     <button type="button" id="acb-toggle" class="acb-toggle" aria-expanded="false" aria-controls="acb-dialog">
@@ -124,6 +165,15 @@
         <span data-acb-key="navigate.arrived"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:message.navigate.arrived" /></span>
         <span data-acb-key="clarify.intro"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:message.clarify.intro" /></span>
         <span data-acb-key="clarify.option"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:message.clarify.option" /></span>
+        <span data-acb-key="send.label"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:form.send" /></span>
+        <span data-acb-key="send.cancel"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:form.cancel" /></span>
+        <span data-acb-key="status.cancelled"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:status.cancelled" /></span>
+        <span data-acb-key="status.contextlimit"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:status.contextlimit" /></span>
+        <span data-acb-key="status.conversationreset"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:status.conversationreset" /></span>
+        <span data-acb-key="readaloud.start"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:readaloud.start" /></span>
+        <span data-acb-key="readaloud.stop"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:readaloud.stop" /></span>
+        <span data-acb-key="readaloud.stopped"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:readaloud.status.stopped" /></span>
+        <span data-acb-key="mic.hint.local"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.hint.local" /></span>
     </template>
 </div>
 

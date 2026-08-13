@@ -21,6 +21,9 @@
  *   #ffffff auf #565656 =  7.3:1  Text auf dem gesperrten Sende-Knopf
  *   #ffffff auf #005a9c =  7.1:1  Navigationsknopf
  *   #1b1b1b auf #e3edf7 = 14.5:1  Ankunftszeile, Auswahlknopf Hover
+ *   #ffffff auf #8a2e00 =  8.5:1  Sende-Knopf im Abbruch-Zustand
+ *   #ffffff auf #6b2400 = 11.3:1  Sende-Knopf im Abbruch-Zustand, Hover
+ *   #005a9c auf #ffffff =  7.1:1  Kontaktlink und Knoepfe im Aktionsbereich
  *
  * Alle Groessen in rem, damit die Browser-Schriftgroesse und Zoom greifen.
  */
@@ -354,7 +357,9 @@
  * waechst mit der eingestellten Schriftgroesse mit.
  */
 .acb-navigate,
-.acb-choice {
+.acb-choice,
+.acb-starter,
+.acb-confirm__button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -392,32 +397,78 @@
 }
 
 /*
- * Auswahlknopf einer Rueckfrage. Bewusst anders gestaltet als der
- * Navigationsknopf: er schickt nur eine Praezisierung, er wechselt die Seite
- * nicht. Kontrast Text #1b1b1b auf #ffffff = 17.2:1, Rahmen #005a9c auf
- * #ffffff = 7.1:1 (>= 3:1).
+ * Auswahlknopf einer Rueckfrage, Einstiegsfrage und Bestaetigungsknopf.
+ * Bewusst anders gestaltet als der Navigationsknopf: alle drei schicken nur
+ * eine Nachricht bzw. eine Aktion, sie wechseln die Seite nicht. Kontrast
+ * Text #1b1b1b auf #ffffff = 17.2:1, Rahmen #005a9c auf #ffffff = 7.1:1
+ * (>= 3:1).
  */
-.acb-choice {
+.acb-choice,
+.acb-starter,
+.acb-confirm__button {
     background-color: #ffffff;
     border: 0.125rem solid #005a9c;
 }
 
-.acb-choice:hover {
+.acb-choice:hover,
+.acb-starter:hover,
+.acb-confirm__button:hover {
     background-color: #e3edf7;
 }
 
 /*
- * Bestaetigung nach einer bestaetigten Navigation (Konzept 4.5).
- * Neutral gehalten - es ist keine Stoerung, sondern eine Information.
- * Erkennbar am sichtbaren Vorspann "Hinweis:" und an der Rahmenstaerke,
- * nicht allein an der Farbe (WCAG 1.4.1).
+ * Bestaetigung nach einer bestaetigten Navigation (Konzept 4.5) und andere
+ * neutrale Hinweiszeilen (z. B. Kontextgrenze, Konzept 4.6). Neutral
+ * gehalten - es ist keine Stoerung, sondern eine Information. Erkennbar am
+ * sichtbaren Vorspann "Hinweis:" und an der Rahmenstaerke, nicht allein an
+ * der Farbe (WCAG 1.4.1).
  * Kontrast Text #1b1b1b auf #e3edf7 = 14.5:1.
  */
-.acb-msg--arrival {
+.acb-msg--arrival,
+.acb-msg--note {
     align-self: stretch;
     background-color: #e3edf7;
     border-width: 0.125rem;
     border-color: #005a9c;
+}
+
+/* ---------- Vorlesen ---------- */
+
+.acb-msg__tools {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 0.0625rem solid #767676;
+}
+
+/*
+ * Zielgroesse (WCAG 2.5.8, AA): mindestens 24 x 24 px - bewusst kleiner als
+ * die Hauptaktionen, weil das Vorlesen ein Komfort-Feature ist und kein
+ * Ersatz fuer einen Screenreader (Konzept 8.9). Kontrast Text #1b1b1b auf
+ * #ffffff = 17.2:1, Rahmen #565656 auf #ffffff = 7.3:1 (>= 3:1).
+ */
+.acb-speak {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5rem;
+    min-height: 1.5rem;
+    padding: 0.25rem 0.5rem;
+    border: 0.0625rem solid #565656;
+    border-radius: 0.25rem;
+    font-size: 0.875rem;
+}
+
+.acb-speak:hover {
+    background-color: #f0f0f0;
+}
+
+/*
+ * Laeuft die Ausgabe gerade, wird das ueber die Beschriftung ("Vorlesen
+ * anhalten") UND eine staerkere Rahmenlinie gezeigt - niemals nur ueber
+ * Farbe (WCAG 1.4.1).
+ */
+.acb-speak[data-acb-speaking] {
+    border-width: 0.1875rem;
 }
 
 /* ---------- Statuszeile (Mikrofon) ---------- */
@@ -505,14 +556,18 @@
 }
 
 /*
- * Gesperrt, solange eine Antwort laeuft. Bewusst kein blasses Ausgrauen:
- * der Text bleibt gut lesbar (Kontrast 7.3:1), erkennbar ist der Zustand
- * an der veraenderten Flaechenfarbe UND am Mauszeiger UND daran, dass
- * Screenreader den Knopf als nicht verfuegbar melden.
+ * Solange eine Antwort laeuft, wird aus dem Sende-Knopf ein Abbruch-Knopf
+ * (Konzept 6.1) - er bleibt bedienbar, bekommt aber eine andere Aufgabe und
+ * deshalb eine andere Farbe. Erkennbar ist der Zustand an der Beschriftung
+ * UND an der Flaechenfarbe, nicht allein an der Farbe (WCAG 1.4.1).
+ * Kontrast #ffffff auf #8a2e00 = 8.5:1.
  */
-.acb-send[aria-disabled="true"] {
-    background-color: #565656;
-    cursor: default;
+.acb-send[data-acb-mode="cancel"] {
+    background-color: #8a2e00;
+}
+
+.acb-send[data-acb-mode="cancel"]:hover {
+    background-color: #6b2400;
 }
 
 .acb-mic-hint {
@@ -564,6 +619,81 @@
     margin: 0.75rem 0 0;
 }
 
+/* ---------- Aktionsbereich (Kontakt, neues Gespraech) ---------- */
+
+/*
+ * Kontaktlink und "Neues Gespraech beginnen" (Konzept 8.6). Dieser Bereich
+ * steht auf allen Seitentypen an derselben relativen Stelle im Widget
+ * (WCAG 3.2.6 Consistent Help).
+ */
+.acb-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    flex: none;
+    padding: 0.75rem 1rem;
+    border-top: 0.0625rem solid #767676;
+}
+
+/*
+ * Zielgroesse (WCAG 2.5.8): mindestens 44 x 44 px. Spezifitaet 0-2-1 noetig,
+ * damit die Regel ".acb-widget a { color: inherit }" nicht gewinnt - gleiche
+ * Ueberlegung wie bei .acb-msg__link. Kontrast #005a9c auf #ffffff = 7.1:1.
+ */
+.acb-widget a.acb-contact {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    color: #005a9c;
+    text-decoration: underline;
+}
+
+/*
+ * Zielgroesse mindestens 44 x 44 px. Kontrast Text #1b1b1b auf #ffffff =
+ * 17.2:1, Rahmen #565656 auf #ffffff = 7.3:1 (>= 3:1).
+ */
+.acb-reset {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+    padding: 0.5rem 1rem;
+    border: 0.125rem solid #565656;
+    border-radius: 0.25rem;
+}
+
+.acb-reset:hover {
+    background-color: #f0f0f0;
+}
+
+/*
+ * Rueckfrage vor dem Loeschen des Gespraechs (COGA 4.5.2). Deutlich
+ * abgesetzt durch Rahmenfarbe UND Flaechenfarbe, damit sie nicht mit einer
+ * normalen Nachricht verwechselt wird (WCAG 1.4.1). Kontrast Text #1b1b1b
+ * auf #fdf3e7 = 15.4:1, Rahmen #8a4b00 auf #ffffff = 5.9:1 (>= 3:1).
+ */
+.acb-confirm {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    flex-basis: 100%;
+    padding: 0.75rem;
+    border: 0.125rem solid #8a4b00;
+    border-radius: 0.25rem;
+    background-color: #fdf3e7;
+}
+
+.acb-confirm[hidden] {
+    display: none;
+}
+
+.acb-confirm__question {
+    margin: 0;
+}
+
 /* ---------- Fokusindikator ---------- */
 
 /*
@@ -594,7 +724,11 @@
     .acb-send,
     .acb-mic,
     .acb-navigate,
-    .acb-choice {
+    .acb-choice,
+    .acb-starter,
+    .acb-reset,
+    .acb-confirm__button,
+    .acb-speak {
         transition: background-color 120ms ease-out, border-width 120ms ease-out;
     }
 }
@@ -645,7 +779,11 @@
     .acb-mic,
     .acb-send,
     .acb-navigate,
-    .acb-choice {
+    .acb-choice,
+    .acb-starter,
+    .acb-reset,
+    .acb-confirm__button,
+    .acb-speak {
         border: 0.125rem solid ButtonText;
     }
 }

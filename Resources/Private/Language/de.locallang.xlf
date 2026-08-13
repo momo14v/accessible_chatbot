@@ -103,13 +103,17 @@
                 <source>Wording of the answers</source>
                 <target>Sprachform der Antworten</target>
             </trans-unit>
+            <trans-unit id="option.genderstyle.neutral">
+                <source>Word it without gender</source>
+                <target>Ohne Geschlechtsbezug formulieren (zum Beispiel: das Team, die Studierenden)</target>
+            </trans-unit>
             <trans-unit id="option.genderstyle.pair">
                 <source>Write out both forms</source>
                 <target>Beide Formen ausschreiben (zum Beispiel: Autorinnen und Autoren)</target>
             </trans-unit>
-            <trans-unit id="option.genderstyle.colon">
-                <source>Short form with a colon</source>
-                <target>Kurzform mit Doppelpunkt (zum Beispiel: Autor:innen)</target>
+            <trans-unit id="option.genderstyle.asterisk">
+                <source>Short form with an asterisk</source>
+                <target>Kurzform mit Sternchen (zum Beispiel: Autor*innen)</target>
             </trans-unit>
             <trans-unit id="option.genderstyle.hint">
                 <source>This setting changes how the assistant words its answers.</source>
@@ -122,6 +126,10 @@
             <trans-unit id="mic.hint">
                 <source>Note: your browser sends the recording to its own speech recognition service. You can also type your message instead.</source>
                 <target>Hinweis: Der Browser sendet die Aufnahme an seinen eigenen Spracherkennungs-Dienst. Die Nachricht lässt sich auch eintippen.</target>
+            </trans-unit>
+            <trans-unit id="mic.hint.local">
+                <source>Note: your browser recognises your speech on this device. Nothing is sent anywhere for this. You can also type your message instead.</source>
+                <target>Hinweis: Der Browser erkennt die Sprache auf diesem Gerät. Dafür wird nichts irgendwohin gesendet. Die Nachricht lässt sich auch eintippen.</target>
             </trans-unit>
             <trans-unit id="message.sender.system">
                 <source>Note:</source>
@@ -198,6 +206,58 @@
             <trans-unit id="message.clarify.option">
                 <source>I mean: %s</source>
                 <target>Ich meine: %s</target>
+            </trans-unit>
+            <trans-unit id="starter.intro">
+                <source>You can ask me these questions, for example:</source>
+                <target>Diese Fragen kann ich zum Beispiel beantworten:</target>
+            </trans-unit>
+            <trans-unit id="widget.contact">
+                <source>Contact a person</source>
+                <target>Kontakt zu einem Menschen</target>
+            </trans-unit>
+            <trans-unit id="widget.newconversation">
+                <source>Start a new conversation</source>
+                <target>Neues Gespräch beginnen</target>
+            </trans-unit>
+            <trans-unit id="widget.newconversation.question">
+                <source>Do you really want to delete this conversation? Then everything starts from the beginning.</source>
+                <target>Soll dieses Gespräch wirklich gelöscht werden? Dann fängt alles von vorn an.</target>
+            </trans-unit>
+            <trans-unit id="widget.newconversation.confirm">
+                <source>Yes, delete the conversation</source>
+                <target>Ja, Gespräch löschen</target>
+            </trans-unit>
+            <trans-unit id="widget.newconversation.cancel">
+                <source>No, keep the conversation</source>
+                <target>Nein, Gespräch behalten</target>
+            </trans-unit>
+            <trans-unit id="status.conversationreset">
+                <source>The conversation was deleted. You can start again now.</source>
+                <target>Das Gespräch wurde gelöscht. Es kann jetzt neu begonnen werden.</target>
+            </trans-unit>
+            <trans-unit id="form.cancel">
+                <source>Cancel the answer</source>
+                <target>Antwort abbrechen</target>
+            </trans-unit>
+            <trans-unit id="status.cancelled">
+                <source>The answer was cancelled. You can ask again at any time.</source>
+                <target>Die Antwort wurde abgebrochen. Eine neue Frage ist jederzeit möglich.</target>
+            </trans-unit>
+            <trans-unit id="status.contextlimit">
+                <source>This conversation is getting long. I only keep the last 10 messages in mind. Older messages are still here to read, but I no longer use them for my answers.</source>
+                <target>Dieses Gespräch wird lang. Ich merke mir nur die letzten 10 Nachrichten. Ältere Nachrichten stehen weiter zum Nachlesen hier, für meine Antworten nutze ich sie aber nicht mehr.</target>
+            </trans-unit>
+            <trans-unit id="readaloud.start">
+                <source>Read the answer aloud</source>
+                <target>Antwort vorlesen</target>
+            </trans-unit>
+            <trans-unit id="readaloud.stop">
+                <source>Stop reading aloud</source>
+                <target>Vorlesen anhalten</target>
+            </trans-unit>
+            <trans-unit id="readaloud.status.stopped">
+                <source>Reading aloud stopped.</source>
+                <target>Vorlesen angehalten.</target>
             </trans-unit>
         </body>
     </file>

@@ -125,6 +125,21 @@ function readNumber(value) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+/* Muss zu Extension14v\AccessibleChatbot\Http\GenderStyle passen (Konzept 8.8). */
+const GENDER_STYLES = ['neutral', 'pair', 'asterisk'];
+
+/**
+ * Prueft einen Sprachform-Wert, bevor er uebernommen wird.
+ *
+ * Der sessionStorage ist vom Browser aus beschreibbar - ein unbekannter Wert
+ * (z. B. ein noch gespeichertes "colon" aus einer aelteren Version) faellt
+ * deshalb auf den Standard des Betreibers zurueck, statt uebernommen zu
+ * werden.
+ */
+function sanitiseGenderStyle(value, fallback) {
+    return typeof value === 'string' && GENDER_STYLES.includes(value) ? value : fallback;
+}
+
 /**
  * Liest alle Oberflaechentexte aus dem <template id="acb-i18n">-Block.
  * So steht keine einzige uebersetzbare Zeichenkette im JavaScript.
@@ -145,12 +160,12 @@ function readLabels(root) {
 }
 
 /** Der Startzustand, wenn im sessionStorage noch nichts liegt. */
-function createDefaultState() {
+function createDefaultState(defaultGenderStyle) {
     return {
         messages: [],
         pendingNavigation: null,
         isOpen: false,
-        genderStyle: 'pair',
+        genderStyle: defaultGenderStyle,
     };
 }
 
@@ -282,12 +297,12 @@ function sanitiseChoices(value) {
  * Tab geschlossen wird - genau das verlangt das Datenschutzkonzept.
  * Fremde oder beschaedigte Daten werden bewusst verworfen statt uebernommen.
  */
-function readState() {
+function readState(defaultGenderStyle) {
     try {
         const raw = window.sessionStorage.getItem(STORAGE_KEY);
 
         if (!raw) {
-            return createDefaultState();
+            return createDefaultState(defaultGenderStyle);
         }
 
         const parsed = JSON.parse(raw);
@@ -296,10 +311,12 @@ function readState() {
             messages: Array.isArray(parsed.messages) ? parsed.messages.filter(isValidMessage).map(sanitiseMessage) : [],
             pendingNavigation: sanitiseNavigation(parsed.pendingNavigation),
             isOpen: parsed.isOpen === true,
-            genderStyle: parsed.genderStyle === 'colon' ? 'colon' : 'pair',
+            // Ein gespeichertes "colon" aus einer aelteren Version faellt hier
+            // still auf den Betreiber-Standard zurueck (Konzept 8.8).
+            genderStyle: sanitiseGenderStyle(parsed.genderStyle, defaultGenderStyle),
         };
     } catch (error) {
-        return createDefaultState();
+        return createDefaultState(defaultGenderStyle);
     }
 }
 
@@ -316,6 +333,27 @@ function writeState(state) {
 }
 
 /**
+ * Haengt den Vorlese-Knopf an eine Bot-Nachricht an (Konzept 8.9).
+ *
+ * Bewusst als LETZTES Element der Nachricht: Navigationsknopf, Rueckfrage-
+ * Knoepfe und Quellenlinks fuehren zu einer anderen Seite oder praezisieren
+ * das Gespraech - sie sind wichtiger und stehen deshalb frueher in der
+ * Tab-Reihenfolge als das Komfort-Feature "vorlesen".
+ */
+function appendReadAloudButton(item, labels) {
+    const tools = document.createElement('div');
+    tools.className = 'acb-msg__tools';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'acb-speak';
+    button.textContent = labels['readaloud.start'] ?? '';
+
+    tools.append(button);
+    item.append(tools);
+}
+
+/**
  * Baut ein Listenelement fuer eine Nachricht - Absender immer als sichtbarer Text.
  *
  * SICHERHEIT (Phase-3-Merkposten): Im Inhaltsindex kann Text stehen, der
@@ -325,7 +363,7 @@ function writeState(state) {
  * als echte DOM-Knoten, deren href ausschliesslich aus einer bereits
  * geprueften, server-erzeugten Adresse stammt.
  */
-function createMessageElement(message, labels, contactUrl) {
+function createMessageElement(message, labels, contactUrl, readAloudEnabled) {
     const item = document.createElement('li');
     item.className = message.role === 'user' ? 'acb-msg acb-msg--user' : 'acb-msg acb-msg--bot';
     item.tabIndex = -1;
@@ -431,11 +469,7 @@ function createMessageElement(message, labels, contactUrl) {
 
         block.append(intro, list);
         item.append(block);
-
-        return item;
-    }
-
-    if (message.suggestContact === true && contactUrl !== '') {
+    } else if (message.suggestContact === true && contactUrl !== '') {
         const block = document.createElement('div');
         block.className = 'acb-msg__sources';
 
@@ -450,6 +484,10 @@ function createMessageElement(message, labels, contactUrl) {
 
         block.append(intro, ' ', anchor);
         item.append(block);
+    }
+
+    if (readAloudEnabled) {
+        appendReadAloudButton(item, labels);
     }
 
     return item;
@@ -480,6 +518,13 @@ function initialiseWidget(root) {
         ? ''
         : (sanitiseLinks([{ url: rawContactUrl, title: 'x' }])[0]?.url ?? '');
 
+    // Betreiber-Voreinstellungen (Site Settings bzw. Constant Editor, siehe
+    // Widget.typoscript). "readAloudEnabled" prueft zusaetzlich, ob der
+    // Browser ueberhaupt Sprachausgabe kann (Konzept 8.9) - fehlt sie, wird
+    // kein toter Knopf angeboten.
+    const defaultGenderStyle = sanitiseGenderStyle(root.dataset.acbGenderDefault, 'neutral');
+    const readAloudEnabled = root.dataset.acbReadAloud === '1' && 'speechSynthesis' in window;
+
     const refs = {
         toggle: root.querySelector('#acb-toggle'),
         toggleLabel: root.querySelector('#acb-toggle-label'),
@@ -493,6 +538,15 @@ function initialiseWidget(root) {
         input: root.querySelector('#acb-input'),
         micButton: root.querySelector('#acb-mic'),
         genderInputs: Array.from(root.querySelectorAll('input[name="acb-gender-style"]')),
+        // Ab hier optionale Elemente - siehe Pflichtteil-Pruefung unten:
+        // fehlen sie, bleibt das jeweilige Feature einfach aus, statt das
+        // ganze Widget zu verstecken.
+        greeting: root.querySelector('#acb-greeting'),
+        starters: root.querySelector('#acb-starters'),
+        resetButton: root.querySelector('#acb-reset'),
+        resetConfirm: root.querySelector('#acb-reset-confirm'),
+        resetYes: root.querySelector('#acb-reset-yes'),
+        resetNo: root.querySelector('#acb-reset-no'),
     };
 
     // Fehlt ein Pflichtteil, bleibt das Widget lieber unsichtbar als halb bedienbar.
@@ -501,11 +555,25 @@ function initialiseWidget(root) {
         return;
     }
 
-    const state = readState();
+    const state = readState(defaultGenderStyle);
     let typingElement = null;
     let awaitingReply = false;
     let announceTimeout = null;
     let pendingAnnouncement = '';
+    // Ein laufender fetch(), damit der Sende-Knopf ihn als Abbruch-Knopf
+    // beenden kann (Konzept 6.1).
+    let pendingController = null;
+    let cancelRequested = false;
+    // Die Kontextgrenzen-Hinweiszeile (Konzept 4.6) erscheint nur einmal je
+    // Seitenaufruf - sonst stuende sie irgendwann in jeder zweiten Antwort.
+    let contextNoticeShown = false;
+    // Der Knopf, der gerade vorliest (Konzept 8.9) - es spricht immer nur
+    // eine Nachricht gleichzeitig.
+    let speakingButton = null;
+    // Steigt bei jedem "Neues Gespraech beginnen". Eine noch laufende
+    // Antwort auf das ALTE Gespraech darf danach nicht mehr im Verlauf
+    // erscheinen (siehe requestReply()/sendMessage()).
+    let conversationEpoch = 0;
 
     /* ---------- kleine Helfer mit Zugriff auf den Zustand ---------- */
 
@@ -572,7 +640,7 @@ function initialiseWidget(root) {
     function addMessage(message) {
         state.messages.push(message);
         writeState(state);
-        refs.list.append(createMessageElement(message, labels, contactUrl));
+        refs.list.append(createMessageElement(message, labels, contactUrl, readAloudEnabled));
         scrollLogToEnd();
     }
 
@@ -687,6 +755,27 @@ function initialiseWidget(root) {
         }
     }
 
+    /**
+     * Schaltet den Sende-Knopf zwischen "Senden" und "Abbrechen" um
+     * (Konzept 6.1). Der Knopf bleibt in beiden Zustaenden ein ganz normaler,
+     * fokussierbarer Knopf - nur seine Aufgabe wechselt.
+     */
+    function setSendMode(mode) {
+        const cancel = mode === 'cancel';
+        refs.send.dataset.acbMode = cancel ? 'cancel' : 'send';
+        refs.send.textContent = (cancel ? labels['send.cancel'] : labels['send.label']) ?? refs.send.textContent;
+    }
+
+    /** Bricht die laufende Anfrage ab (Konzept 6.1, COGA 4.5.9). */
+    function cancelRequest() {
+        if (!awaitingReply || pendingController === null) {
+            return;
+        }
+
+        cancelRequested = true;
+        pendingController.abort();
+    }
+
     /* ---------- Antwortquelle ---------- */
 
     /**
@@ -705,8 +794,10 @@ function initialiseWidget(root) {
         }
 
         // AbortController statt AbortSignal.timeout: gleiche Wirkung,
-        // aber in allen Browsern verfuegbar.
+        // aber in allen Browsern verfuegbar. Ausserdem wird derselbe
+        // Controller vom Abbruch-Knopf benutzt (Konzept 6.1).
         const controller = new AbortController();
+        pendingController = controller;
         const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
         // Der Verlauf steht bereits im Zustand. Der LETZTE Eintrag ist die
@@ -739,7 +830,15 @@ function initialiseWidget(root) {
         })
             .catch(() => {
                 // fetch scheitert nur bei Netzwerkfehlern oder nach Abbruch -
-                // ein HTTP-Fehlerstatus landet NICHT hier.
+                // ein HTTP-Fehlerstatus landet NICHT hier. Ein Abbruch durch
+                // den Nutzer (Abbruch-Knopf) ist kein Fehler, sondern eine
+                // Information (Konzept 6.1, COGA 4.5.9).
+                if (cancelRequested) {
+                    const cancelled = createRequestError('status.cancelled');
+                    cancelled.acbCancelled = true;
+                    throw cancelled;
+                }
+
                 throw createRequestError(controller.signal.aborted ? 'error.timeout' : 'error.offline');
             })
             .then((response) => response.json()
@@ -774,6 +873,7 @@ function initialiseWidget(root) {
             })
             .finally(() => {
                 window.clearTimeout(timeout);
+                pendingController = null;
             });
     }
 
@@ -799,24 +899,39 @@ function initialiseWidget(root) {
         refs.input.value = '';
         showTyping();
 
+        // Kontextgrenze (Konzept 4.6): faellt mit dieser Nachricht die
+        // erste aeltere Nachricht aus dem mitgesendeten Verlauf heraus, wird
+        // das EINMAL je Seitenaufruf im Verlauf vermerkt - lesbar, aber ohne
+        // eigene Ansage. Eine eigene Ansage wuerde die Meldung "schreibt eine
+        // Antwort" gleich darunter ueberholen (siehe announce()): eine
+        // wartende Ansage wird von der naechsten verworfen, und "es wird
+        // gerade geantwortet" ist in diesem Moment wichtiger. Nachlesbar
+        // bleibt der Hinweis trotzdem im Verlauf.
+        if (!contextNoticeShown && state.messages.length - 1 > MAX_HISTORY_ENTRIES) {
+            contextNoticeShown = true;
+            addSystemMessage(labels['status.contextlimit'] ?? '', false, 'acb-msg--note');
+        }
+
         // Das Protokoll hat kein aria-live mehr; der Tipp-Status wird deshalb
         // hier EINMAL angesagt (Konzept 8.3) und nie auf einem Timer wiederholt.
         announce(labels['status.typing'] ?? '');
 
         awaitingReply = true;
-        // Bewusst aria-disabled statt disabled:
-        // - disabled wuerde den Fokus verlieren, wenn der Knopf ihn gerade hat
-        //   (Browser setzen ihn dann auf <body> - der Nutzer landet am
-        //   Seitenanfang).
-        // - disabled unterdrueckt ausserdem das submit-Ereignis. Damit waere
-        //   die Ansage oben ("wird gerade geschrieben") nie erreichbar.
-        // aria-disabled meldet den Zustand an Screenreader, laesst den Knopf
-        // aber fokussierbar und ausloesbar - die Sperre uebernimmt
-        // awaitingReply.
-        refs.send.setAttribute('aria-disabled', 'true');
+        // Der aktuelle Gespraechs-Zaehler: wird "Neues Gespraech beginnen"
+        // waehrend dieser Anfrage betaetigt, darf die Antwort nicht mehr im
+        // (dann bereits geleerten) Verlauf erscheinen.
+        const epoch = conversationEpoch;
+        // Bewusst kein disabled (Konzept 8.4): der Knopf bleibt fokussierbar
+        // und ausloesbar, er bekommt nur eine andere Aufgabe - Abbrechen
+        // statt Senden (Konzept 6.1).
+        setSendMode('cancel');
 
         requestReply(text)
             .then((reply) => {
+                if (epoch !== conversationEpoch) {
+                    return;
+                }
+
                 hideTyping();
 
                 if (reply.text !== '') {
@@ -839,17 +954,24 @@ function initialiseWidget(root) {
                 }
             })
             .catch((error) => {
+                if (epoch !== conversationEpoch) {
+                    return;
+                }
+
                 hideTyping();
 
                 // Es darf niemals stilles Schweigen geben: jede Stoerung wird
                 // als sichtbare Zeile ins Protokoll geschrieben und dadurch
-                // ueber aria-live vorgelesen.
+                // ueber aria-live vorgelesen. Ein Abbruch durch den Nutzer
+                // ist dabei keine Stoerung, sondern eine Information
+                // (Konzept 6.1) - deshalb ohne Warnfarbe und ohne Notausgang.
+                const cancelled = Boolean(error && error.acbCancelled === true);
                 const errorText = (error && error.acbText)
                     || labels[(error && error.acbLabel) || 'error.request']
                     || labels['error.request']
                     || '';
 
-                addSystemMessage(errorText);
+                addSystemMessage(errorText, !cancelled, cancelled ? 'acb-msg--note' : 'acb-msg--system');
 
                 // Pflicht seit Phase 5: ohne aria-live am Protokoll wuerde eine
                 // Stoermeldung sonst gar nicht mehr angesagt (Exit-Kriterium
@@ -858,8 +980,81 @@ function initialiseWidget(root) {
             })
             .finally(() => {
                 awaitingReply = false;
-                refs.send.removeAttribute('aria-disabled');
+                cancelRequested = false;
+                setSendMode('send');
             });
+    }
+
+    /* ---------- Einstiegsfragen und neues Gespraech ---------- */
+
+    /**
+     * Blendet die Einstiegsfragen ein oder aus (Konzept 8.6). Sie sind nur
+     * sinnvoll, solange noch kein eigenes Gespraech steht - danach wuerden
+     * sie unter jeder Nachricht ablenken.
+     */
+    function setStartersVisible(visible) {
+        if (refs.starters) {
+            refs.starters.hidden = !visible;
+        }
+    }
+
+    /**
+     * Oeffnet oder schliesst die Rueckfrage vor dem Loeschen des Gespraechs
+     * (COGA 4.5.2). Der Fokus geht beim Oeffnen auf "Ja, Gespraech loeschen"
+     * (die vorsichtigere Voreinstellung waere "Nein" - aber die Frage selbst
+     * ist ueber aria-describedby an beiden Knoepfen verlinkt, sodass ein
+     * Screenreader sie in jedem Fall vorliest, bevor ein Knopf ausgeloest
+     * wird) und beim Schliessen zurueck auf den Ausloese-Knopf.
+     */
+    function setResetConfirmOpen(open) {
+        if (!refs.resetConfirm || !refs.resetButton) {
+            return;
+        }
+
+        refs.resetConfirm.hidden = !open;
+        refs.resetButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+
+        if (open) {
+            refs.resetYes?.focus();
+        } else {
+            refs.resetButton.focus();
+        }
+    }
+
+    /**
+     * Setzt das Gespraech zurueck (COGA 4.5.2, Konzept 4.6). Es werden
+     * AUSSCHLIESSLICH "messages" und "pendingNavigation" geleert -
+     * "isOpen" und "genderStyle" sind Besucher-Einstellungen und bleiben
+     * unangetastet.
+     */
+    function resetConversation() {
+        cancelRequest();
+        // Eine noch laufende Antwort auf das ALTE Gespraech darf danach
+        // nicht mehr im (jetzt geleerten) Verlauf erscheinen, siehe
+        // sendMessage()/requestReply().
+        conversationEpoch += 1;
+        awaitingReply = false;
+        setSendMode('send');
+        hideTyping();
+        stopReadAloud(false);
+
+        state.messages = [];
+        state.pendingNavigation = null;
+        writeState(state);
+        contextNoticeShown = false;
+
+        // Alles ausser der Begruessung entfernen - sie bleibt fest im Markup
+        // stehen (siehe Widget.html) und wird nicht neu erzeugt.
+        Array.from(refs.list.children).forEach((item) => {
+            if (item !== refs.greeting) {
+                item.remove();
+            }
+        });
+
+        setStartersVisible(true);
+        setResetConfirmOpen(false);
+        scrollLogToEnd(true);
+        announce(labels['status.conversationreset'] ?? '');
     }
 
     /* ---------- Spracheingabe ---------- */
@@ -890,6 +1085,19 @@ function initialiseWidget(root) {
         }
     }
 
+    /**
+     * TASK 9 (Konzept 8.9): lokale, geraeteinterne Spracherkennung, wenn der
+     * Browser sie anbietet - sonst der bisherige Cloud-Weg. Beide Wege
+     * benutzen dieselbe Schnittstelle (SpeechRecognition), der Unterschied
+     * ist ausschliesslich die Instanz-Eigenschaft "processLocally".
+     *
+     * "SpeechRecognition.available()" ist eine ASYNCHRONE, statische Pruefung
+     * (Stand 2026-08-13: Chrome/Edge 139+, Opera 123+, Desktop, kein W3C-
+     * Standard). Deshalb steht der Cloud-Weg von Anfang an startklar da, und
+     * die lokale Erkennung ersetzt ihn nur dann, wenn die Pruefung VOR dem
+     * ersten Klick fertig ist - eine langsame oder nie aufloesende Zusage
+     * darf den Mikrofon-Knopf niemals tot lassen.
+     */
     function setUpSpeechInput() {
         const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -907,20 +1115,81 @@ function initialiseWidget(root) {
             return;
         }
 
-        const recognition = new Recognition();
         const pageLanguage = document.documentElement.lang;
-
-        if (pageLanguage) {
-            recognition.lang = pageLanguage;
-        }
-
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 1;
-
         let listening = false;
         let starting = false;
         let handled = false;
+        let firstClickHappened = false;
+
+        /**
+         * Baut eine Erkennungs-Instanz samt Ereignissen. Ausgelagert, weil
+         * TASK 9 die Instanz austauschen kann, bevor der erste Klick
+         * passiert ist (siehe unten) - beide Instanzen sollen sich exakt
+         * gleich verhalten, nur eben lokal oder in der Cloud erkennen.
+         */
+        function buildRecognition(processLocally) {
+            const instance = new Recognition();
+
+            if (pageLanguage) {
+                instance.lang = pageLanguage;
+            }
+
+            instance.continuous = false;
+            instance.interimResults = false;
+            instance.maxAlternatives = 1;
+
+            // "processLocally" ist eine Instanz-Eigenschaft und muss VOR
+            // start() gesetzt werden (Standard: false).
+            if (processLocally) {
+                instance.processLocally = true;
+            }
+
+            instance.addEventListener('start', () => {
+                starting = false;
+                listening = true;
+                refs.micButton.setAttribute('aria-pressed', 'true');
+                announce(labels['mic.listening'] ?? '');
+            });
+
+            instance.addEventListener('result', (event) => {
+                handled = true;
+                refs.input.value = event.results?.[0]?.[0]?.transcript ?? '';
+                announce(labels['mic.recognized'] ?? '');
+                refs.input.focus();
+            });
+
+            instance.addEventListener('error', (event) => {
+                handled = true;
+                starting = false;
+
+                if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                    announce(labels['mic.denied'] ?? '');
+                } else if (event.error === 'no-speech') {
+                    announce(labels['mic.nospeech'] ?? '');
+                } else {
+                    // Deckt u. a. "language-not-supported" ab: kommt beim
+                    // lokalen Weg vor, wenn das Sprachpaket zwischenzeitlich
+                    // fehlt, obwohl "available()" zuvor "available" meldete.
+                    announce(labels['mic.error'] ?? '');
+                }
+            });
+
+            instance.addEventListener('end', () => {
+                starting = false;
+                listening = false;
+                refs.micButton.setAttribute('aria-pressed', 'false');
+
+                if (!handled) {
+                    announce(labels['mic.stopped'] ?? '');
+                }
+            });
+
+            return instance;
+        }
+
+        // Cloud-Weg sofort startklar - unveraendertes Verhalten. Die lokale
+        // Erkennung ist eine reine, spaeter eintreffende Verbesserung.
+        let recognition = buildRecognition(false);
 
         refs.micButton.hidden = false;
 
@@ -931,6 +1200,8 @@ function initialiseWidget(root) {
         }
 
         refs.micButton.addEventListener('click', () => {
+            firstClickHappened = true;
+
             if (listening) {
                 recognition.stop();
                 return;
@@ -954,49 +1225,159 @@ function initialiseWidget(root) {
             }
         });
 
-        recognition.addEventListener('start', () => {
-            starting = false;
-            listening = true;
-            refs.micButton.setAttribute('aria-pressed', 'true');
-            announce(labels['mic.listening'] ?? '');
-        });
+        // TASK 9: lokale Erkennung pruefen. Nichts hiervon darf den bereits
+        // startklaren Cloud-Weg gefaehrden - deshalb ausschliesslich additiv
+        // und in einem eigenen try/catch.
+        try {
+            if (typeof Recognition.available === 'function') {
+                Recognition.available({
+                    langs: [pageLanguage || window.navigator.language],
+                    processLocally: true,
+                })
+                    .then((availability) => {
+                        if (firstClickHappened || availability !== 'available') {
+                            // "downloadable"/"downloading": ABSICHTLICH kein
+                            // install() - das koennte einen grossen Download
+                            // ausloesen, ohne dass danach gefragt wurde. Der
+                            // Cloud-Weg bleibt in diesem Fall bestehen.
+                            return;
+                        }
 
-        recognition.addEventListener('result', (event) => {
-            handled = true;
-            refs.input.value = event.results?.[0]?.[0]?.transcript ?? '';
-            announce(labels['mic.recognized'] ?? '');
-            refs.input.focus();
-        });
+                        recognition = buildRecognition(true);
 
-        recognition.addEventListener('error', (event) => {
-            handled = true;
-            starting = false;
-
-            if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                announce(labels['mic.denied'] ?? '');
-            } else if (event.error === 'no-speech') {
-                announce(labels['mic.nospeech'] ?? '');
-            } else {
-                announce(labels['mic.error'] ?? '');
+                        // Der Hinweistext muss den tatsaechlich genutzten
+                        // Weg beschreiben (Konzept 8.9).
+                        if (micHint !== null) {
+                            micHint.textContent = labels['mic.hint.local'] ?? micHint.textContent;
+                        }
+                    })
+                    .catch(() => {
+                        /* bleibt beim Cloud-Weg */
+                    });
             }
-        });
+        } catch (error) {
+            /* bleibt beim Cloud-Weg - ein Randfeature darf das
+               Hauptfeature nie mitreissen (Testbefund Phase 5). */
+        }
+    }
 
-        recognition.addEventListener('end', () => {
-            starting = false;
-            listening = false;
-            refs.micButton.setAttribute('aria-pressed', 'false');
+    /* ---------- Vorlesen ---------- */
 
-            if (!handled) {
-                announce(labels['mic.stopped'] ?? '');
+    // Haelt die gerade gesprochene Utterance fest: ohne eine Referenz aus
+    // dem Modul-Gueltigkeitsbereich sammelt der Garbage Collector sie in
+    // manchen Browsern mitten im Satz ein und die Ausgabe bricht ab.
+    let currentUtterance = null;
+
+    /**
+     * Beendet eine laufende Vorlese-Ausgabe (Konzept 8.9).
+     *
+     * announceStop = false wird beim Zuruecksetzen des Gespraechs und beim
+     * Verlassen der Seite (pagehide) benutzt: dort folgt entweder ohnehin
+     * eine andere Ansage, oder es hoert niemand mehr zu.
+     */
+    function stopReadAloud(announceStop) {
+        try {
+            window.speechSynthesis.cancel();
+        } catch (error) {
+            /* bewusst ignoriert - ohne Sprachausgabe gibt es nichts zu stoppen */
+        }
+
+        currentUtterance = null;
+
+        if (speakingButton !== null) {
+            const button = speakingButton;
+            speakingButton = null;
+
+            button.removeAttribute('data-acb-speaking');
+            button.textContent = labels['readaloud.start'] ?? button.textContent;
+
+            if (announceStop) {
+                announce(labels['readaloud.stopped'] ?? '');
             }
-        });
+        }
+    }
+
+    /**
+     * Liest die zugehoerige Bot-Antwort vor oder stoppt eine laufende
+     * Ausgabe - derselbe Knopf startet und stoppt (Konzept 8.9).
+     *
+     * Vorgelesen wird AUSSCHLIESSLICH der Antworttext (".acb-msg__text"),
+     * nicht die Bedienelemente drumherum - fremde Inhalte im Vorlesen
+     * erhoehen sonst unnoetig die kognitive Last (COGA). Es spricht immer
+     * nur eine Nachricht gleichzeitig.
+     */
+    function toggleReadAloud(button) {
+        if (speakingButton === button) {
+            stopReadAloud(true);
+            return;
+        }
+
+        stopReadAloud(false);
+
+        try {
+            const message = button.closest('.acb-msg');
+            const text = message ? (message.querySelector('.acb-msg__text')?.textContent ?? '') : '';
+
+            if (text.trim() === '' || !('speechSynthesis' in window)) {
+                return;
+            }
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = document.documentElement.lang || '';
+
+            // Eine zur Seitensprache passende Stimme ist ein Zusatz: ist die
+            // Stimmenliste noch nicht geladen (sie fuellt sich asynchron
+            // ueber "voiceschanged"), waehlt der Browser anhand von "lang"
+            // ohnehin selbst eine passende Stimme - das ist ein sauberer
+            // Rueckfall und kein Fehler.
+            const voices = window.speechSynthesis.getVoices();
+
+            if (Array.isArray(voices) && voices.length > 0 && utterance.lang !== '') {
+                const match = voices.find(
+                    (voice) => typeof voice.lang === 'string'
+                        && voice.lang.toLowerCase().startsWith(utterance.lang.toLowerCase())
+                );
+
+                if (match) {
+                    utterance.voice = match;
+                }
+            }
+
+            utterance.addEventListener('end', () => {
+                if (speakingButton === button) {
+                    stopReadAloud(false);
+                }
+            });
+            utterance.addEventListener('error', () => {
+                if (speakingButton === button) {
+                    stopReadAloud(false);
+                }
+            });
+
+            currentUtterance = utterance;
+            speakingButton = button;
+            button.setAttribute('data-acb-speaking', 'true');
+            button.textContent = labels['readaloud.stop'] ?? button.textContent;
+
+            window.speechSynthesis.speak(utterance);
+        } catch (error) {
+            stopReadAloud(false);
+        }
     }
 
     /* ---------- Start ---------- */
 
+    // 0. Ist die Vorlesefunktion abgeschaltet oder kann der Browser gar
+    //    keine Sprachausgabe, verschwinden serverseitig gerenderte
+    //    Vorlese-Knoepfe wieder (nur die Begruessung hat einen: der Rest
+    //    des Verlaufs entsteht ohnehin erst durch JavaScript).
+    if (!readAloudEnabled) {
+        root.querySelectorAll('button.acb-speak').forEach((button) => button.remove());
+    }
+
     // 1. Gespeicherten Verlauf wieder aufbauen.
     state.messages.forEach((message) => {
-        refs.list.append(createMessageElement(message, labels, contactUrl));
+        refs.list.append(createMessageElement(message, labels, contactUrl, readAloudEnabled));
     });
 
     // 1b. Ankunft nach einer bestaetigten Navigation (Konzept 4.5).
@@ -1035,6 +1416,11 @@ function initialiseWidget(root) {
         option.checked = option.value === state.genderStyle;
     });
 
+    // 2b. Einstiegsfragen (Konzept 8.6) nur zeigen, solange noch kein
+    //     eigenes Gespraech steht - danach wuerden sie unter jeder
+    //     Nachricht ablenken.
+    setStartersVisible(state.messages.length === 0);
+
     // 3. Sichtbar machen: ohne JavaScript erscheint gar nichts.
     root.hidden = false;
 
@@ -1054,6 +1440,10 @@ function initialiseWidget(root) {
         showSpeechUnavailable();
     }
 
+    // 6. Vorlesen anhalten, wenn die Seite verlassen wird - ohne eigene
+    //    Ansage, es hoert ohnehin niemand mehr zu.
+    window.addEventListener('pagehide', () => stopReadAloud(false));
+
     /* ---------- Ereignisse ---------- */
 
     refs.toggle.addEventListener('click', () => {
@@ -1068,6 +1458,15 @@ function initialiseWidget(root) {
     // muss den Chat trotzdem mit Escape schliessen koennen.
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape' || refs.dialog.hidden) {
+            return;
+        }
+
+        // Steht die Rueckfrage vor dem Loeschen des Gespraechs offen, schliesst
+        // Escape zuerst nur SIE - nicht gleich das ganze Widget (COGA 4.5.2:
+        // ein Schritt zurueck statt ein grosser Sprung).
+        if (refs.resetConfirm && !refs.resetConfirm.hidden) {
+            event.preventDefault();
+            setResetConfirmOpen(false);
             return;
         }
 
@@ -1168,6 +1567,40 @@ function initialiseWidget(root) {
             return;
         }
 
+        // Einstiegsfrage (Konzept 8.6): der Knopftext IST die Nachricht, die
+        // abgeschickt wird - kein Ueberraschungseffekt. Der Klick navigiert
+        // nicht (WCAG 3.2.2). Der Fokus geht VOR dem Verstecken der Knoepfe
+        // ins Eingabefeld - sonst wuerde der Browser ihn auf <body> setzen,
+        // sobald das geklickte Element verschwindet, und die Person stuende
+        // unangekuendigt am Seitenanfang (Konzept 8.4).
+        const starter = target.closest('button.acb-starter');
+
+        if (starter !== null) {
+            if (awaitingReply) {
+                announce(labels['status.typing'] ?? '');
+
+                return;
+            }
+
+            refs.input.value = starter.textContent ?? '';
+            sendMessage();
+            refs.input.focus();
+            setStartersVisible(false);
+            scrollLogToEnd(true);
+
+            return;
+        }
+
+        // Vorlesen (Konzept 8.9): startet oder stoppt die Sprachausgabe
+        // dieser einen Antwort.
+        const speak = target.closest('button.acb-speak');
+
+        if (speak !== null) {
+            toggleReadAloud(speak);
+
+            return;
+        }
+
         // Navigationsangebot: hier wird NICHT navigiert. Der Seitenwechsel
         // passiert allein dadurch, dass der Nutzer einen ganz normalen Link
         // betaetigt hat. Gemerkt wird nur, wohin - damit auf der Zielseite
@@ -1187,6 +1620,30 @@ function initialiseWidget(root) {
         event.preventDefault();
         sendMessage();
     });
+
+    // Der Sende-Knopf ist waehrend einer laufenden Antwort der Abbruch-
+    // Knopf (Konzept 6.1). event.preventDefault() unterdrueckt hier bewusst
+    // die eigentliche submit-Auswirkung des Knopfes (type="submit") - sonst
+    // wuerde ZUSAETZLICH zum Abbrechen eine neue Anfrage losgeschickt.
+    //
+    // Enter im Eingabefeld bricht ABSICHTLICH NICHTS ab: dort loest Enter
+    // weiterhin ganz normal "submit" aus und sendet, mit der Ansage "wird
+    // gerade geschrieben" als Rueckmeldung - ein Enter zu viel darf die
+    // eigene laufende Anfrage nicht killen.
+    refs.send.addEventListener('click', (event) => {
+        if (!awaitingReply) {
+            return;
+        }
+
+        event.preventDefault();
+        cancelRequest();
+    });
+
+    refs.resetButton?.addEventListener('click', () => {
+        setResetConfirmOpen(refs.resetConfirm !== null && refs.resetConfirm.hidden);
+    });
+    refs.resetNo?.addEventListener('click', () => setResetConfirmOpen(false));
+    refs.resetYes?.addEventListener('click', () => resetConversation());
 
     refs.genderInputs.forEach((option) => {
         option.addEventListener('change', () => {

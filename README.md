@@ -4,7 +4,7 @@ Ein barrierefreier Chatbot für TYPO3, der Fragen ausschließlich aus den sichtb
 
 ## Status
 
-Version 0.6.0 - in Entwicklung (Phase 6 von 9). Das barrierefreie Chat-Widget ist vorhanden und beantwortet Fragen über die Google-Gemini-API. Seit Phase 4 greift der Chat auf den Inhaltsindex zu: Der Bot beantwortet Fragen aus den tatsächlichen, sichtbaren Inhalten dieser Website und nennt zu jeder inhaltlich gestützten Antwort einen oder mehrere Links auf die verwendeten Seiten. Findet er keine passende Seite, sagt er das ehrlich und bietet - falls eingerichtet - die Kontaktseite an. Seit Phase 5 ist der Gesprächsverlauf mit Pfeiltasten durchsuchbar und Ansagen laufen über eine eigene Statuszeile statt über den Verlauf selbst; fehlt die Spracherkennung des Browsers, erscheint ein sichtbarer Hinweis. Seit Phase 6 kann der Assistent zu einer Seite führen. Er bietet dafür einen Knopf innerhalb seiner Antwort an — die Seite wechselt ausschließlich, wenn dieser Knopf betätigt wird. Einen automatischen Seitenwechsel gibt es in keiner Einstellung. Passen mehrere Seiten, stellt der Assistent eine Rückfrage mit Auswahlknöpfen.
+Version 0.7.0 - in Entwicklung (Phase 7 von 9). Das barrierefreie Chat-Widget ist vorhanden und beantwortet Fragen über die Google-Gemini-API. Seit Phase 4 greift der Chat auf den Inhaltsindex zu: Der Bot beantwortet Fragen aus den tatsächlichen, sichtbaren Inhalten dieser Website und nennt zu jeder inhaltlich gestützten Antwort einen oder mehrere Links auf die verwendeten Seiten. Findet er keine passende Seite, sagt er das ehrlich und bietet - falls eingerichtet - die Kontaktseite an. Seit Phase 5 ist der Gesprächsverlauf mit Pfeiltasten durchsuchbar und Ansagen laufen über eine eigene Statuszeile statt über den Verlauf selbst; fehlt die Spracherkennung des Browsers, erscheint ein sichtbarer Hinweis. Seit Phase 6 kann der Assistent zu einer Seite führen. Er bietet dafür einen Knopf innerhalb seiner Antwort an — die Seite wechselt ausschließlich, wenn dieser Knopf betätigt wird. Einen automatischen Seitenwechsel gibt es in keiner Einstellung. Passen mehrere Seiten, stellt der Assistent eine Rückfrage mit Auswahlknöpfen. Seit Phase 7 gibt es vorgeschlagene Einstiegsfragen, einen dauerhaft sichtbaren Weg zu einem Menschen, ein "Neues Gespräch beginnen" mit Rückfrage, eine abbrechbare laufende Anfrage, einen Hinweis, wenn ältere Nachrichten aus dem Kontext fallen, drei statt zwei Sprachformen, eine serverseitige Textsäuberung der KI-Antwort sowie eine optionale Vorlesefunktion.
 
 ## Voraussetzungen
 
@@ -125,8 +125,11 @@ zugewiesen werden, auch wenn sonst ausschließlich mit statischem TypoScript
 | `botName` | Assistent | Anzeigename in Kopfzeile und vor jeder Antwort |
 | `headingLevel` | 2 | Überschriften-Ebene im Chatfenster (2 bis 6). Sollte zur Überschriften-Gliederung der Website passen, damit der Chat die Gliederung der Seite nicht stört. |
 | `salutation` | sie | Anrede der Antworten (`sie` oder `du`) |
+| `genderStyleDefault` | neutral | Voreingestellte Sprachform (`neutral`, `pair` oder `asterisk`, siehe Abschnitt „Sprachform der Antworten"). Besucherinnen und Besucher können sie im Chatfenster selbst umstellen. |
 | `privacyPageUid` | 0 | Seite mit der Datenschutzerklärung (0 = kein Link) |
-| `contactPageUid` | 0 | Kontaktseite als Fallback (0 = keine Seite) |
+| `contactPageUid` | 0 | **Faktische Pflichtangabe.** Weg zu einem Menschen, dauerhaft im Chatfenster sichtbar (nicht nur im Fehlerfall). Ohne Kontaktseite hat der Chatbot keinen Notausgang - siehe Abschnitt „Weg zu einem Menschen". 0 = kein Link. |
+| `starterQuestions` | leer | Bis zu vier vorgeschlagene Einstiegsfragen, siehe Abschnitt „Einstiegsfragen". |
+| `readAloudEnabled` | an | Vorlesefunktion je Antwort anbieten, siehe Abschnitt „Antworten vorlesen lassen". |
 | `maxIndexPagesFullSitemap` | 150 | Ab dieser Anzahl indexierter Seiten bekommt der Assistent nur noch die oberen Ebenen des Seitenbaums (bis Ebene 2) statt der vollständigen Seitenliste |
 
 Alle sichtbaren Texte liegen in `Resources/Private/Language/locallang.xlf`
@@ -179,6 +182,176 @@ Kontaktseite".
 - **Bei Mehrdeutigkeit** (mehrere Seiten könnten gemeint sein) stellt der
   Assistent stattdessen eine Rückfrage mit Auswahlknöpfen. Diese Knöpfe
   beantworten nur die Rückfrage und navigieren nicht.
+
+## Einstiegsfragen
+
+Unter der Begrüßung können bis zu vier vorgeschlagene Fragen als echte
+Knöpfe erscheinen - für alle, die vor einem leeren Eingabefeld nicht wissen,
+was sie fragen sollen.
+
+Gepflegt werden sie über das Setting `starterQuestions` als **eine einzige
+Zeichenkette**, die Fragen werden durch einen senkrechten Strich `|`
+getrennt:
+
+```
+Wann habt ihr geöffnet?|Wo finde ich den Kontakt?|Was kostet der Eintritt?
+```
+
+Mehr als vier Fragen werden abgeschnitten (die ersten vier zählen), leere
+Einträge (zum Beispiel durch `||`) werden übersprungen. Leer gelassen =
+keine Einstiegsfragen.
+
+Ein Klick auf eine Einstiegsfrage **sendet sie sofort** - der Knopftext IST
+die Nachricht, die abgeschickt wird, es gibt keinen Zwischenschritt zum
+Nachbearbeiten. Der Klick navigiert nicht, es öffnet sich also keine andere
+Seite.
+
+**Wichtig für mehrsprachige Websites:** Site Settings gelten pro **Site**,
+nicht pro **Sprache**. Wer auf einer mehrsprachigen Website in jeder Sprache
+andere Einstiegsfragen zeigen möchte, kann das nicht über `starterQuestions`
+allein lösen. Eine Möglichkeit ist eine TypoScript-Bedingung im
+statischen Weg (Weg B), die je Sprach-ID eine eigene Konstante setzt, zum
+Beispiel:
+
+```
+[siteLanguage("languageId") == 1]
+accessiblechatbot.starterQuestions = Wann habt ihr geöffnet?|Wo finde ich den Kontakt?
+[END]
+```
+
+Das wirkt allerdings - wie in Abschnitt „Wichtig bei Weg B" beschrieben -
+ausschließlich auf die **Anzeige** des Widgets, nicht auf das, was die KI
+tatsächlich als Systemprompt bekommt.
+
+## Weg zu einem Menschen
+
+`contactPageUid` ist eine **faktische Pflichtangabe**: Ohne eine gesetzte
+Kontaktseite hat der Chatbot keinen Notausgang. Ist sie gesetzt, steht der
+Link zur Kontaktseite **dauerhaft** im Chatfenster - nicht erst, wenn etwas
+schiefgeht. Er steht bei jedem Seitentyp an derselben Stelle im Widget, damit
+er wiederauffindbar bleibt.
+
+## Neues Gespräch beginnen
+
+Ein Knopf im Chatfenster löscht den bisherigen Verlauf und beginnt neu. Vor
+dem Löschen erscheint eine Rückfrage mit zwei Knöpfen ("Ja, Gespräch
+löschen" / "Nein, Gespräch behalten") - ein versehentlicher Klick soll nicht
+sofort das ganze Gespräch kosten.
+
+Gelöscht werden dabei **ausschließlich** der sichtbare Verlauf und ein
+eventuell gemerktes Navigationsziel. Ob das Chatfenster offen oder
+geschlossen ist und welche Sprachform eingestellt ist, bleiben unverändert -
+das sind Einstellungen der besuchenden Person, kein Teil des Gesprächs.
+
+## Antwort abbrechen
+
+Solange eine Antwort noch nicht da ist, wird aus dem Senden-Knopf ein
+Abbrechen-Knopf. Ein Klick beendet die laufende Anfrage sofort; im Verlauf
+erscheint ein kurzer, neutraler Hinweis statt einer Fehlermeldung - ein
+Abbruch auf eigenen Wunsch ist kein Fehler. Der Knopf wird dabei **nie**
+mit `disabled` gesperrt, damit er tastaturerreichbar und ansagbar bleibt.
+
+## Sprachform der Antworten
+
+Im Chatfenster lässt sich zwischen drei Sprachformen wählen. Die Reihenfolge
+folgt der Empfehlung des DBSV (Deutscher Blinden- und
+Sehbehindertenverband, Stand März 2024):
+
+| Option | Beispiel | Einordnung |
+| --- | --- | --- |
+| **Ohne Geschlechtsbezug formulieren** (Standard) | „das Team", „die Studierenden" | Erstempfehlung des DBSV |
+| **Beide Formen ausschreiben** | „die Autorinnen und Autoren" | Zweitempfehlung des DBSV |
+| **Kurzform mit Sternchen** | „die Autor*innen" | nur bei ausdrücklichem Wunsch nach einer Kurzform |
+
+**Warum der Doppelpunkt entfallen ist:** In einer früheren Version gab es
+eine Kurzform mit Doppelpunkt ("Autor:innen"). Der DBSV rät davon
+ausdrücklich ab: der Doppelpunkt erzeugt im Wortinneren eine Satzzeichenpause
+wie ein Punkt oder Komma, wodurch Screenreader den Satz vorzeitig als beendet
+vorlesen. Aus demselben Grund war der Unterstrich nie eine Option dieser
+Extension.
+
+Voreingestellt ist die Sprachform, die im Setting `genderStyleDefault`
+steht; jede besuchende Person kann sie im Chatfenster selbst umstellen. Die
+gewählte Form wird im `sessionStorage` gemerkt.
+
+## Antworten vorlesen lassen
+
+Ist `readAloudEnabled` eingeschaltet (Standard) und beherrscht der Browser
+Sprachausgabe, erscheint an jeder Antwort ein Knopf "Antwort vorlesen".
+Derselbe Knopf startet und stoppt die Ausgabe. Vorgelesen wird
+ausschließlich der Antworttext, nicht die Bedienelemente drumherum.
+
+**Ehrliche Einordnung:** Das ist ein **Komfort-Feature** für Menschen mit
+Lese- und Lernschwierigkeiten (das W3C-COGA-Regelwerk empfiehlt
+„gleichzeitig hören und lesen"). Es ist **kein Ersatz für einen
+Screenreader** und **keine WCAG-Anforderung** - WCAG enthält kein
+Kriterium, das Vorlesen verlangt. Es wird nirgends als
+Barrierefreiheits-Nachweis dargestellt.
+
+**Bekannter Nebeneffekt:** Jede Bot-Antwort mit eingeschalteter
+Vorlesefunktion bekommt einen zusätzlichen Tastatur-Stopp (den
+Vorlese-Knopf). Wer die Funktion nicht möchte - weder als Betreiberin/
+Betreiber noch als besuchende Person - kann sie über `readAloudEnabled`
+komplett abschalten; dann entsteht auch kein zusätzlicher Tabstopp.
+
+## Textsäuberung der KI-Antwort
+
+Der Systemprompt verbietet der KI bereits Markdown, Emoji und rohe
+Web-Adressen im Antworttext. Weil sich Sprachmodelle nicht immer
+zuverlässig daran halten, filtert der Server die Antwort zusätzlich, bevor
+sie das Chatfenster erreicht.
+
+**Entfernt wird:**
+
+- Markdown-Auszeichnung (`**fett**`, `__fett__`, `*kursiv*`, `` `Code` ``,
+  `#` als Überschrift, `>` als Zitat, `-`/`*`/`1.` als Aufzählungszeichen,
+  `---` als Trennlinie) - der sichtbare Text bleibt jeweils erhalten.
+- Markdown-Links und -Bilder (`[Text](Adresse)`) - der sichtbare Linktext
+  bleibt, die Adresse fällt weg. Echte Links entstehen ausschließlich
+  server-generiert aus den geprüften Quellseiten, nie aus KI-Text.
+- rohe Web-Adressen (`https://…`, `www.…`).
+- Emoji und Piktogramme.
+
+**Bleibt ausdrücklich stehen:**
+
+- E-Mail-Adressen - sie sind kein Link zu einer fremden Seite, sondern ein
+  Kontaktweg.
+- Gradzeichen und ähnliche Sonderzeichen (zum Beispiel „20 °C").
+- Pfeile - sie sind keine Emoji.
+- ein Sternchen **innerhalb** eines Wortes, zum Beispiel in „Autor*innen"
+  (siehe „Sprachform der Antworten") - nur ein Sternchen, das ein Wort oder
+  einen Satzteil einrahmt, gilt als Markdown-Betonung.
+
+Der Filter darf den Sinn nicht verändern - er entfernt Auszeichnung, nicht
+Inhalt.
+
+## Spracheingabe: geräteintern oder in der Cloud
+
+Bietet der Browser die neue, geräteinterne Spracherkennung an (Stand
+2026-08-13: Chrome und Edge ab Version 139, Opera ab Version 123, jeweils nur
+auf dem Desktop), wird sie bevorzugt: Aufnahme und erkannter Text verlassen
+das Gerät dann gar nicht erst. Der Hinweistext unter dem Eingabefeld nennt in
+diesem Fall genau das.
+
+In allen anderen Fällen - Firefox, Safari, mobile Browser, ältere
+Chrome/Edge-Versionen - bleibt es beim bisherigen Cloud-Weg: Chrome, Edge und
+Safari übertragen die Aufnahme an die Spracherkennungs-Dienste ihres
+jeweiligen Herstellers (siehe Abschnitt „Datenschutz").
+
+Die Prüfung, ob die geräteinterne Erkennung verfügbar ist, läuft asynchron im
+Hintergrund und **lädt nie von selbst ein Sprachpaket nach**: Ist die
+Erkennung grundsätzlich verfügbar, aber ein Sprachpaket müsste dafür erst
+heruntergeladen werden, bleibt es bewusst beim Cloud-Weg - ein
+unangekündigter, möglicherweise großer Download ohne Zutun der besuchenden
+Person wäre nicht angemessen.
+
+## Migrationshinweis für bestehende Installationen
+
+Die Sprachform „Kurzform mit Doppelpunkt" (`colon`) ist mit Phase 7
+entfallen (siehe Abschnitt „Sprachform der Antworten"). Ein im Browser
+bereits gespeicherter Wert `colon` wird beim nächsten Laden des Widgets
+still auf den Betreiber-Standard (`genderStyleDefault`, voreingestellt
+`neutral`) zurückgesetzt - das ist kein Fehler und erfordert keine Aktion.
 
 ## API-Key einrichten
 

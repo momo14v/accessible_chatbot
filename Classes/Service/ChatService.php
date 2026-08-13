@@ -37,6 +37,19 @@ final class ChatService
     /** Rueckfrage: wenige, klare Optionen (COGA 4.5). */
     private const MAX_CLARIFY_CHOICES = 3;
 
+    /**
+     * Deckt die gaengigen Emoji-Unicode-Bloecke ab (Konzept 6.4).
+     *
+     * BEWUSST OHNE die Bloecke "Arrows" (U+2190-U+21FF) und "Miscellaneous
+     * Symbols and Arrows" (U+2B00-U+2BFF): Pfeile sind keine Emoji und
+     * bleiben deshalb stehen (siehe README, Abschnitt "Textsaeuberung").
+     * Kein Anspruch auf jedes Sonderzeichen der Welt - Ziel ist "keine
+     * sichtbaren Emoji in Antworten", nicht ein vollstaendiger Unicode-Parser.
+     */
+    private const EMOJI_PATTERN = '/[\x{1F300}-\x{1F5FF}\x{1F600}-\x{1F64F}\x{1F680}-\x{1F6FF}'
+        . '\x{1F900}-\x{1F9FF}\x{1FA70}-\x{1FAFF}\x{1F1E6}-\x{1F1FF}'
+        . '\x{2600}-\x{26FF}\x{2700}-\x{27BF}\x{FE0F}\x{200D}]/u';
+
     public function __construct(
         private readonly ConfigurationProvider $configurationProvider,
         private readonly PromptBuilder $promptBuilder,
@@ -140,8 +153,23 @@ final class ChatService
 
         $action = $downgraded || $emptyClarify ? ChatAction::Answer : $result->action;
 
+        // Textsaeuberung (Konzept 6.4): der Systemprompt verbietet Markdown,
+        // Emoji und rohe URLs bereits - weil Modelle sich nicht zuverlaessig
+        // daran halten, filtert der Service die Antwort zusaetzlich, bevor
+        // sie das Haus verlaesst.
+        $cleanedReply = self::cleanReply($result->reply);
+
+        if ($cleanedReply === '' && trim($result->reply) !== '') {
+            // Nur der Umstand, NIEMALS der Text selbst (Konzept 3.6): wird
+            // eine nicht-leere Antwort durch die Saeuberung leer, ist das ein
+            // Anzeichen fuer ein Formatproblem beim Anbieter, kein Inhalt,
+            // der geloggt werden duerfte. Die leere Antwort landet danach im
+            // bestehenden Fehlerpfad des Frontends (leere "reply").
+            $this->logger->warning('AI reply became empty after cleaning (Markdown/emoji/URL filter)');
+        }
+
         return new ChatReply(
-            $result->reply,
+            $cleanedReply,
             $action,
             $navigation,
             $sources,
@@ -330,5 +358,63 @@ final class ChatService
 
             return null;
         }
+    }
+
+    /**
+     * Saeubert eine KI-Antwort von Markdown-Auszeichnung, rohen Web-Adressen
+     * und Emoji (Konzept 6.4). Der Filter darf den SINN nicht veraendern -
+     * er entfernt Auszeichnung, nicht Inhalt: "**Montag**" wird zu "Montag",
+     * "die Autor*innen" bleibt unangetastet (das Sternchen steht dort
+     * WORTINNERN, nicht als Betonungs-Markierung), "20 °C" bleibt unveraendert
+     * (das Gradzeichen ist kein Markdown), und eine E-Mail-Adresse bleibt
+     * stehen (sie ist kein Link zu einer fremden Seite).
+     */
+    private static function cleanReply(string $text): string
+    {
+        // Markdown-Bilder VOR Links entfernen: "![alt](url)" wuerde der
+        // Link-Filter sonst mit seinem fuehrenden "!" stehen lassen.
+        $text = (string)preg_replace('/!\[([^\]]*)\]\([^)]*\)/u', '$1', $text);
+
+        // Markdown-Links: der sichtbare Linktext bleibt, die Zieladresse
+        // faellt weg - echte Links entstehen ausschliesslich server-generiert
+        // aus den geprueften Quellseiten (Konzept 4.5, 6.4), nie aus KI-Text.
+        $text = (string)preg_replace('/\[([^\]]*)\]\([^)]*\)/u', '$1', $text);
+
+        // Ueberschriften-, Zitat-, Aufzaehlungs- und Trennlinien-Marker am
+        // Zeilenanfang. Der "m"-Modifier bezieht "^"/"$" auf jede Zeile.
+        $text = (string)preg_replace('/^[ \t]*#{1,6}[ \t]+/mu', '', $text);
+        $text = (string)preg_replace('/^[ \t]*>[ \t]?/mu', '', $text);
+        $text = (string)preg_replace('/^[ \t]*[-*+][ \t]+/mu', '', $text);
+        $text = (string)preg_replace('/^[ \t]*\d+\.[ \t]+/mu', '', $text);
+        $text = (string)preg_replace('/^[ \t]*(?:-{3,}|\*{3,}|_{3,})[ \t]*$/mu', '', $text);
+
+        // Betonung. Doppelte Zeichen zuerst - sonst wuerde die
+        // Einzelzeichen-Regel schon die Haelfte eines "**...**"-Paares
+        // auffressen. Die Lookarounds bei "*" und "_" schuetzen wortinterne
+        // Zeichen wie in "Autor*innen": ein einzelnes Sternchen/Unterstrich
+        // zaehlt nur als Markdown-Markierung, wenn es NICHT direkt zwischen
+        // zwei Wortzeichen steht.
+        $text = (string)preg_replace('/\*\*(.+?)\*\*/su', '$1', $text);
+        $text = (string)preg_replace('/__(.+?)__/su', '$1', $text);
+        $text = (string)preg_replace('/(?<!\w)\*(?!\s)(.+?)(?<!\s)\*(?!\w)/su', '$1', $text);
+        $text = (string)preg_replace('/(?<!\w)_(?!\s)(.+?)(?<!\s)_(?!\w)/su', '$1', $text);
+        $text = (string)preg_replace('/`([^`]*)`/u', '$1', $text);
+
+        // Rohe Web-Adressen. E-Mail-Adressen bleiben ausdruecklich stehen -
+        // sie sind kein Link zu einer fremden Seite, sondern ein Kontaktweg.
+        $text = (string)preg_replace('#\bhttps?://\S+#iu', '', $text);
+        $text = (string)preg_replace('#\bwww\.\S+#iu', '', $text);
+
+        // Emoji und Piktogramme (Konzept 6.4).
+        $text = (string)preg_replace(self::EMOJI_PATTERN, '', $text);
+
+        // Aufraeumen: durch die Entfernungen oben koennen doppelte
+        // Leerzeichen, Randleerraum je Zeile und mehrfach leere Zeilen
+        // entstehen.
+        $text = (string)preg_replace('/[ \t]{2,}/u', ' ', $text);
+        $text = (string)preg_replace('/[ \t]+$/mu', '', $text);
+        $text = (string)preg_replace('/\n{3,}/u', "\n\n", $text);
+
+        return trim($text);
     }
 }

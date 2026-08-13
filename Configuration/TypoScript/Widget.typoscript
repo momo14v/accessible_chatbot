@@ -33,6 +33,9 @@ page.9990 {
         salutation = {$accessiblechatbot.salutation}
         privacyPageUid = {$accessiblechatbot.privacyPageUid}
         contactPageUid = {$accessiblechatbot.contactPageUid}
+        genderStyleDefault = {$accessiblechatbot.genderStyleDefault}
+        starterQuestions = {$accessiblechatbot.starterQuestions}
+        readAloudEnabled = {$accessiblechatbot.readAloudEnabled}
     }
 
     # Dynamische Werte gehoeren NICHT in "settings":
