@@ -286,6 +286,26 @@ function sanitiseChoices(value) {
 }
 
 /**
+ * Prueft EINMAL, ob der Browser sessionStorage ueberhaupt zulaesst.
+ *
+ * Im privaten Modus und bei blockierten Cookies wirft schon der Zugriff auf
+ * window.sessionStorage - deshalb steht der ganze Zugriff im try. Geprueft
+ * wird mit einem Schreib-Test, weil manche Browser das Lesen erlauben und
+ * erst das Schreiben verweigern.
+ */
+function isStorageUsable() {
+    try {
+        const probe = '__acb_probe__';
+        window.sessionStorage.setItem(probe, '1');
+        window.sessionStorage.removeItem(probe);
+
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
+/**
  * Liest den Verlauf aus dem sessionStorage. sessionStorage ueberlebt Reload
  * und Seitenwechsel im selben Tab und wird vom Browser geloescht, sobald der
  * Tab geschlossen wird - genau das verlangt das Datenschutzkonzept.
@@ -550,6 +570,7 @@ function initialiseWidget(root) {
     }
 
     const state = readState(defaultGenderStyle);
+    const storageUsable = isStorageUsable();
     let typingElement = null;
     let awaitingReply = false;
     let announceTimeout = null;
@@ -1198,10 +1219,12 @@ function initialiseWidget(root) {
      *
      * "SpeechRecognition.available()" ist eine ASYNCHRONE, statische Pruefung
      * (Stand 2026-08-13: Chrome/Edge 139+, Opera 123+, Desktop, kein W3C-
-     * Standard). Deshalb steht der Cloud-Weg von Anfang an startklar da, und
-     * die lokale Erkennung ersetzt ihn nur dann, wenn die Pruefung VOR dem
-     * ersten Klick fertig ist - eine langsame oder nie aufloesende Zusage
-     * darf den Mikrofon-Knopf niemals tot lassen.
+     * Standard). Deshalb steht der Cloud-Weg von Anfang an startklar da. Die
+     * Pruefung laeuft seit dem 17.08.2026 (Konzept 8.9) erst ab dem ersten
+     * Klick auf den Mikrofon-Knopf, nicht schon beim Laden der Seite - der
+     * Cloud-Weg bedient deshalb IMMER den allerersten Klick. Die lokale
+     * Erkennung uebernimmt fruehestens ab der zweiten Nutzung, sobald die
+     * Zusage eingetroffen ist.
      */
     function setUpSpeechInput() {
         const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1225,12 +1248,14 @@ function initialiseWidget(root) {
         let starting = false;
         let handled = false;
         let firstClickHappened = false;
+        let pendingLocalUpgrade = false;
 
         /**
          * Baut eine Erkennungs-Instanz samt Ereignissen. Ausgelagert, weil
-         * TASK 9 die Instanz austauschen kann, bevor der erste Klick
-         * passiert ist (siehe unten) - beide Instanzen sollen sich exakt
-         * gleich verhalten, nur eben lokal oder in der Cloud erkennen.
+         * TASK 9 die Instanz austauschen kann, NACHDEM der erste Klick
+         * passiert ist, sobald die Verfuegbarkeitspruefung antwortet (siehe
+         * unten) - beide Instanzen sollen sich exakt gleich verhalten, nur
+         * eben lokal oder in der Cloud erkennen.
          */
         function buildRecognition(processLocally) {
             const instance = new Recognition();
@@ -1293,9 +1318,40 @@ function initialiseWidget(root) {
                 if (!handled) {
                     announce(labels['mic.stopped'] ?? '');
                 }
+
+                // Ein waehrend der Aufnahme aufgeschobener Wechsel auf die
+                // lokale Erkennung wird jetzt nachgeholt (Review H1).
+                if (pendingLocalUpgrade) {
+                    pendingLocalUpgrade = false;
+                    upgradeToLocal();
+                }
             });
 
             return instance;
+        }
+
+        /**
+         * Tauscht die Erkennungs-Instanz gegen die lokal arbeitende aus und zieht
+         * den Hinweistext nach. Ausgelagert, weil der Tausch an zwei Stellen
+         * passieren kann: sofort, wenn gerade nicht aufgenommen wird - oder
+         * nachtraeglich im "end"-Ereignis, wenn er warten musste.
+         *
+         * ACHTUNG bei Umbauten: Diese Funktion greift auf "recognition" und
+         * "micHint" zu, die WEITER UNTEN deklariert sind. Das geht nur gut, weil
+         * beide Aufrufstellen erst nach einer Nutzeraktion feuern koennen - also
+         * lange nachdem die Deklarationen gelaufen sind. Wird eine Aufrufstelle
+         * nach oben gezogen oder beim Initialisieren aufgerufen, gibt es einen
+         * ReferenceError. Genau diese Fehlerklasse hat in Phase 7 schon einmal
+         * das ganze Widget lahmgelegt.
+         */
+        function upgradeToLocal() {
+            recognition = buildRecognition(true);
+
+            // Der Hinweistext muss den tatsaechlich genutzten Weg beschreiben
+            // (Konzept 8.9).
+            if (micHint !== null) {
+                micHint.textContent = labels['mic.hint.local'] ?? micHint.textContent;
+            }
         }
 
         // Cloud-Weg sofort startklar - unveraendertes Verhalten. Die lokale
@@ -1311,8 +1367,68 @@ function initialiseWidget(root) {
         }
 
         refs.micButton.addEventListener('click', () => {
-            firstClickHappened = true;
+            // Lokale Erkennung pruefen - ERST beim ersten Klick, NIE beim Laden
+            // der Seite. Messung 2026-08-17 in chrome-headless-shell 1.62.1: fehlt
+            // die Mojo-Schnittstelle "media.mojom.OnDeviceSpeechRecognition",
+            // beendet Chromium bei "Recognition.available({ processLocally: true })"
+            // mit "bad Mojo message" den GESAMTEN Renderer-Prozess - nicht nur den
+            // Chatbot, die ganze Seite stirbt. Das bestehende try/catch und .catch()
+            // koennen das NICHT verhindern: der Abbruch passiert unterhalb von
+            // JavaScript, bevor irgendein catch greifen kann. Diese Verlegung
+            // verkleinert die Angriffsflaeche nur - von jedem Seitenaufruf auf einen
+            // bewussten Klick - sie beseitigt sie nicht: keine JavaScript-Pruefung
+            // kann den kaputten Fall vorher erkennen, die Pruefung selbst ist der
+            // Ausloeser. Nichts hiervon darf den bereits startklaren Cloud-Weg
+            // gefaehrden - deshalb ausschliesslich additiv, in einem eigenen
+            // try/catch, und nur einmal (Schutz ueber firstClickHappened, das
+            // deshalb hier und nicht erst danach auf true gesetzt wird).
+            if (!firstClickHappened) {
+                firstClickHappened = true;
 
+                try {
+                    if (typeof Recognition.available === 'function') {
+                        Recognition.available({
+                            langs: [pageLanguage || window.navigator.language],
+                            processLocally: true,
+                        })
+                            .then((availability) => {
+                                if (availability !== 'available') {
+                                    // "downloadable"/"downloading": ABSICHTLICH kein
+                                    // install() - das koennte einen grossen Download
+                                    // ausloesen, ohne dass danach gefragt wurde. Der
+                                    // Cloud-Weg bleibt in diesem Fall bestehen.
+                                    return;
+                                }
+
+                                // NIEMALS waehrend einer laufenden Aufnahme tauschen:
+                                // die alte Instanz nimmt dann weiter auf, waehrend
+                                // "recognition" schon auf die neue, nie gestartete
+                                // zeigt. Ein stop() auf einer nicht laufenden Instanz
+                                // ist laut Spezifikation wirkungslos - der
+                                // Mikrofon-Knopf waere tot (Review 2026-08-17, H1).
+                                if (listening || starting) {
+                                    pendingLocalUpgrade = true;
+
+                                    return;
+                                }
+
+                                upgradeToLocal();
+                            })
+                            .catch(() => {
+                                /* bleibt beim Cloud-Weg */
+                            });
+                    }
+                } catch (error) {
+                    /* bleibt beim Cloud-Weg - ein Randfeature darf das
+                       Hauptfeature nie mitreissen (Testbefund Phase 5). */
+                }
+            }
+
+            // Bewusst OHNE auf die Pruefung oben zu warten: sie ist asynchron und
+            // unbestimmt lang (siehe Dokumentation am Funktionsanfang). Der
+            // Mikrofon-Start darf dadurch keine Verzoegerung bekommen - korrekt
+            // startender Cloud-Weg schlaegt eine moegliche Verbesserung beim
+            // allerersten Klick.
             if (listening) {
                 recognition.stop();
                 return;
@@ -1332,44 +1448,19 @@ function initialiseWidget(root) {
                 recognition.start();
             } catch (error) {
                 starting = false;
+
+                // Ohne gestartete Aufnahme kommt kein "end"-Ereignis - ein
+                // hier aufgeschobener Wechsel auf die lokale Erkennung wuerde
+                // sonst bis zur naechsten regulaer beendeten Aufnahme liegen
+                // bleiben (Review 2026-08-17, L2).
+                if (pendingLocalUpgrade) {
+                    pendingLocalUpgrade = false;
+                    upgradeToLocal();
+                }
+
                 announce(labels['mic.error'] ?? '');
             }
         });
-
-        // TASK 9: lokale Erkennung pruefen. Nichts hiervon darf den bereits
-        // startklaren Cloud-Weg gefaehrden - deshalb ausschliesslich additiv
-        // und in einem eigenen try/catch.
-        try {
-            if (typeof Recognition.available === 'function') {
-                Recognition.available({
-                    langs: [pageLanguage || window.navigator.language],
-                    processLocally: true,
-                })
-                    .then((availability) => {
-                        if (firstClickHappened || availability !== 'available') {
-                            // "downloadable"/"downloading": ABSICHTLICH kein
-                            // install() - das koennte einen grossen Download
-                            // ausloesen, ohne dass danach gefragt wurde. Der
-                            // Cloud-Weg bleibt in diesem Fall bestehen.
-                            return;
-                        }
-
-                        recognition = buildRecognition(true);
-
-                        // Der Hinweistext muss den tatsaechlich genutzten
-                        // Weg beschreiben (Konzept 8.9).
-                        if (micHint !== null) {
-                            micHint.textContent = labels['mic.hint.local'] ?? micHint.textContent;
-                        }
-                    })
-                    .catch(() => {
-                        /* bleibt beim Cloud-Weg */
-                    });
-            }
-        } catch (error) {
-            /* bleibt beim Cloud-Weg - ein Randfeature darf das
-               Hauptfeature nie mitreissen (Testbefund Phase 5). */
-        }
     }
 
     /* ---------- Vorlesen ---------- */
@@ -1531,6 +1622,20 @@ function initialiseWidget(root) {
     //     eigenes Gespraech steht - danach wuerden sie unter jeder
     //     Nachricht ablenken.
     setStartersVisible(state.messages.length === 0);
+
+    // 2c. sessionStorage blockiert (privater Modus, blockierte Cookies).
+    //     Das Widget funktioniert weiter, aber der Verlauf ueberlebt keinen
+    //     Seitenwechsel - das ist eine Information ueber eine Einschraenkung
+    //     und faellt damit NICHT unter die Ausnahme fuer reine Bedienzustaende
+    //     (Konzept 8.3): sie steht im Verlauf UND wird angesagt.
+    //     announce() merkt die Ansage, solange das Chatfenster zu ist, und
+    //     holt sie beim ersten Oeffnen nach - genau der Fall hier.
+    if (!storageUsable) {
+        const storageText = labels['status.storageunavailable'] ?? '';
+
+        addSystemMessage(storageText, false, 'acb-msg--note');
+        announce(storageText);
+    }
 
     // 3. Sichtbar machen: ohne JavaScript erscheint gar nichts.
     root.hidden = false;

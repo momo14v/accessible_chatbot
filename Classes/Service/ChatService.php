@@ -97,6 +97,20 @@ final class ChatService
         // gefunden wird, kann die KI nicht kennen (Konzept 3.3).
         $retrieval = $this->retrievalService->retrieve($payload->message, $site, $language);
 
+        // Leerer Inhaltsindex (Konzept 11, Phase 8, Aufgabe 4). Enthaelt der
+        // Index fuer diese Website und Sprache GAR NICHTS, gibt es nichts zu
+        // antworten: die KI wird dann bewusst nicht gefragt. Sonst haenge die
+        // Reaktion allein davon ab, wie sich das Modell ohne Material
+        // verhaelt - und genau das verbietet Kernprinzip 5 ("Der Bot luegt
+        // nicht und raet nicht"). Nebeneffekt: es kostet kein Kontingent.
+        if ($retrieval->sitemap === [] && $retrieval->hits === []) {
+            throw new AiProviderException(
+                'Content index is empty for this site and language',
+                1755000102,
+                'error.noindex'
+            );
+        }
+
         $messages = $payload->history;
 
         // Gemini erwartet, dass der Verlauf mit einer Nutzernachricht beginnt.

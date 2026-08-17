@@ -8,6 +8,7 @@ use Extension14v\AccessibleChatbot\Configuration\ConfigurationProvider;
 use Extension14v\AccessibleChatbot\Event\ModifyPageIndexRecordEvent;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\LoggerInterface;
+use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Context\Context;
 use TYPO3\CMS\Core\Context\LanguageAspect;
 use TYPO3\CMS\Core\Database\Connection;
@@ -86,6 +87,7 @@ final class IndexService
         private readonly ConfigurationProvider $configurationProvider,
         private readonly RootLineAccessChecker $rootLineChecker,
         private readonly FrontendContextFactory $contextFactory,
+        private readonly FrontendInterface $cache,
         #[Channel('accessible_chatbot')]
         private readonly LoggerInterface $logger,
     ) {}
@@ -120,6 +122,7 @@ final class IndexService
             );
             $this->insertRows($connection, $rows);
             $connection->commit();
+            $this->flushSitemapCache();
         } catch (\Throwable $exception) {
             $connection->rollBack();
             $this->logger->error('Index rebuild failed for site {site}: {message}', [
@@ -166,7 +169,18 @@ final class IndexService
             );
         }
 
-        return (int)$queryBuilder->executeStatement();
+        $removed = (int)$queryBuilder->executeStatement();
+
+        // Auch hier leeren, damit die Regel "jeder Schreibvorgang am Index
+        // leert den Sitemap-Zwischenspeicher" ausnahmslos gilt. Praktisch
+        // kann eine verwaiste Website ohnehin keine Anfrage mehr ausloesen -
+        // aber eine Regel mit einer stillen Ausnahme haelt niemand lange
+        // durch (Review 2026-08-17, L1).
+        if ($removed > 0) {
+            $this->flushSitemapCache();
+        }
+
+        return $removed;
     }
 
     /**
@@ -205,6 +219,20 @@ final class IndexService
     public function invalidatePageTreeCache(): void
     {
         $this->rootLineChecker->reset();
+    }
+
+    /**
+     * Leert die zwischengespeicherte Sitemap-Kompakt (Konzept 4.4, Schritt 4).
+     *
+     * Bewusst ueber die Marke und bewusst fuer ALLE Websites: ein
+     * DataHandler-Durchlauf kann Seiten mehrerer Websites betreffen, und der
+     * Neuaufbau einer Seitenliste ist billig. Genau EIN Aufruf pro
+     * Indexierungsvorgang, immer NACH dem Commit - vor dem Commit koennte
+     * eine parallele Anfrage sofort wieder den alten Stand einlagern.
+     */
+    private function flushSitemapCache(): void
+    {
+        $this->cache->flushByTag(RetrievalService::SITEMAP_CACHE_TAG);
     }
 
     /**
@@ -275,6 +303,7 @@ final class IndexService
                 $this->insertRows($connection, $builtRows[$identifier]);
             }
             $connection->commit();
+            $this->flushSitemapCache();
         } catch (\Throwable $exception) {
             $connection->rollBack();
             $this->logger->error('Incremental index refresh failed: {message}', [

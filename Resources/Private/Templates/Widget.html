@@ -22,7 +22,10 @@
                 <f:defaultCase><h2 class="acb-dialog__title">{settings.botName}</h2></f:defaultCase>
             </f:switch>
             <button type="button" id="acb-close" class="acb-close">
-                <img class="acb-icon" src="{f:uri.resource(path: 'EXT:accessible_chatbot/Resources/Public/Icons/close.svg')}" width="24" height="24" alt="" />
+                <svg class="acb-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+                    <rect x="2" y="10.5" width="20" height="3" rx="1.5" transform="rotate(45 12 12)"/>
+                    <rect x="2" y="10.5" width="20" height="3" rx="1.5" transform="rotate(-45 12 12)"/>
+                </svg>
                 <span class="acb-visually-hidden"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.close" /></span>
             </button>
         </div>
@@ -88,7 +91,10 @@
             </div>
             <button type="button" id="acb-mic" class="acb-mic" aria-pressed="false"
                     aria-describedby="acb-mic-hint" hidden>
-                <img class="acb-icon" src="{f:uri.resource(path: 'EXT:accessible_chatbot/Resources/Public/Icons/microphone.svg')}" width="24" height="24" alt="" />
+                <svg class="acb-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+                    <rect x="9" y="2" width="6" height="12" rx="3"/>
+                    <path d="M5 11h2a5 5 0 0 0 10 0h2a7 7 0 0 1-6 6.9V21h3v2H8v-2h3v-3.1A7 7 0 0 1 5 11z"/>
+                </svg>
                 <span class="acb-visually-hidden"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.label" /></span>
             </button>
             <button type="submit" id="acb-send" class="acb-send" data-acb-mode="send"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:form.send" /></button>
@@ -130,7 +136,10 @@
     </div>
 
     <button type="button" id="acb-toggle" class="acb-toggle" aria-expanded="false" aria-controls="acb-dialog">
-        <img class="acb-toggle__icon" src="{f:uri.resource(path: 'EXT:accessible_chatbot/Resources/Public/Icons/chat.svg')}" width="24" height="24" alt="" />
+        <svg class="acb-toggle__icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+            <rect x="2" y="4" width="20" height="13" rx="3"/>
+            <path d="M7 16h6l-7 5z"/>
+        </svg>
         <span id="acb-toggle-label" class="acb-toggle__label"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.toggle.open" /></span>
     </button>
 
@@ -172,6 +181,7 @@
         <span data-acb-key="send.cancel"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:form.cancel" /></span>
         <span data-acb-key="status.cancelled"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:status.cancelled" /></span>
         <span data-acb-key="status.contextlimit"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:status.contextlimit" /></span>
+        <span data-acb-key="status.storageunavailable"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:status.storageunavailable" /></span>
         <span data-acb-key="status.conversationreset"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:status.conversationreset" /></span>
         <span data-acb-key="readaloud.start"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:readaloud.start" /></span>
         <span data-acb-key="readaloud.stop"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:readaloud.stop" /></span>

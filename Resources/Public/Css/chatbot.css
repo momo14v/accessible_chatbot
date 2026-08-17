@@ -100,6 +100,23 @@
     color: #005a9c;
 }
 
+/* Die Icons sind Inline-SVG und nehmen ihre Farbe aus currentColor. Eine
+   Regel der Gastseite wie "svg { fill: red }" wuerde sie sonst umfaerben:
+   ein Praesentationsattribut am Element hat Spezifitaet 0 und verliert gegen
+   jede Regel. Deshalb hier ausdruecklich festgehalten. */
+.acb-widget svg {
+    fill: currentColor;
+}
+
+/*
+ * Spezifitaet dieser Reset-Regel: 0-1-1 (.acb-widget + Element "button").
+ * Alle Button-Komponenten weiter unten in dieser Datei sind deshalb bewusst
+ * mit ".acb-widget " vorangestellt (0-2-0) - nur so schlagen ihre eigenen
+ * Werte fuer background, padding, border, color und font diesen Reset. Ohne
+ * das Praefix gewinnt still wieder dieser Reset, und Flaeche, Abstand und
+ * Rahmen der Buttons verschwinden. Den Reset selbst NICHT abschwaechen: er
+ * muss stark genug bleiben, um fremdes Site-CSS zu schlagen.
+ */
 .acb-widget button {
     margin: 0;
     padding: 0;
@@ -110,7 +127,7 @@
     cursor: pointer;
 }
 
-.acb-icon {
+.acb-widget .acb-icon {
     display: block;
     width: 1.5rem;
     height: 1.5rem;
@@ -130,7 +147,7 @@
 
 /* ---------- Toggle-Button ---------- */
 
-.acb-toggle {
+.acb-widget .acb-toggle {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
@@ -144,11 +161,11 @@
     box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.35);
 }
 
-.acb-toggle:hover {
+.acb-widget .acb-toggle:hover {
     background-color: #00426f;
 }
 
-.acb-toggle__icon {
+.acb-widget .acb-toggle__icon {
     flex: none;
     width: 1.5rem;
     height: 1.5rem;
@@ -191,7 +208,7 @@
     font-weight: 700;
 }
 
-.acb-close {
+.acb-widget .acb-close {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -200,6 +217,10 @@
     height: 2.75rem;
     border-radius: 0.25rem;
     background-color: #ffffff;
+    /* Ausdruecklich gesetzt: die Kopfzeile (.acb-dialog__header) vererbt
+       Weiss, die eigene Flaeche des Knopfs ist aber hell - ohne diesen Wert
+       waere ein spaeteres Inline-SVG-Symbol weiss auf weiss. */
+    color: #1b1b1b;
 }
 
 /* ---------- Transparenzhinweis ---------- */
@@ -355,10 +376,10 @@
  * 44 x 44 px. 2.75rem entspricht bei Standard-Schriftgroesse 44 px und
  * waechst mit der eingestellten Schriftgroesse mit.
  */
-.acb-navigate,
-.acb-choice,
-.acb-starter,
-.acb-confirm__button {
+.acb-widget .acb-navigate,
+.acb-widget .acb-choice,
+.acb-widget .acb-starter,
+.acb-widget .acb-confirm__button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -402,16 +423,16 @@
  * Text #1b1b1b auf #ffffff = 17.2:1, Rahmen #005a9c auf #ffffff = 7.1:1
  * (>= 3:1).
  */
-.acb-choice,
-.acb-starter,
-.acb-confirm__button {
+.acb-widget .acb-choice,
+.acb-widget .acb-starter,
+.acb-widget .acb-confirm__button {
     background-color: #ffffff;
     border: 0.125rem solid #005a9c;
 }
 
-.acb-choice:hover,
-.acb-starter:hover,
-.acb-confirm__button:hover {
+.acb-widget .acb-choice:hover,
+.acb-widget .acb-starter:hover,
+.acb-widget .acb-confirm__button:hover {
     background-color: #e3edf7;
 }
 
@@ -445,7 +466,7 @@
  * Ersatz fuer einen Screenreader (Konzept 8.9). Kontrast Text #1b1b1b auf
  * #ffffff = 17.2:1, Rahmen #565656 auf #ffffff = 7.3:1 (>= 3:1).
  */
-.acb-speak {
+.acb-widget .acb-speak {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -457,7 +478,7 @@
     font-size: 0.875rem;
 }
 
-.acb-speak:hover {
+.acb-widget .acb-speak:hover {
     background-color: #f0f0f0;
 }
 
@@ -507,7 +528,7 @@
     font-weight: 600;
 }
 
-.acb-input {
+.acb-widget .acb-input {
     width: 100%;
     min-height: 2.75rem;
     padding: 0.375rem 0.5rem;
@@ -518,7 +539,7 @@
     font: inherit;
 }
 
-.acb-mic {
+.acb-widget .acb-mic {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -541,7 +562,7 @@
     background-color: #e3edf7;
 }
 
-.acb-send {
+.acb-widget .acb-send {
     min-height: 2.75rem;
     padding: 0.5rem 1rem;
     border-radius: 0.25rem;
@@ -550,7 +571,7 @@
     font-weight: 600;
 }
 
-.acb-send:hover {
+.acb-widget .acb-send:hover {
     background-color: #00426f;
 }
 
@@ -653,7 +674,7 @@
  * Zielgroesse mindestens 44 x 44 px. Kontrast Text #1b1b1b auf #ffffff =
  * 17.2:1, Rahmen #565656 auf #ffffff = 7.3:1 (>= 3:1).
  */
-.acb-reset {
+.acb-widget .acb-reset {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -663,7 +684,7 @@
     border-radius: 0.25rem;
 }
 
-.acb-reset:hover {
+.acb-widget .acb-reset:hover {
     background-color: #f0f0f0;
 }
 
@@ -786,21 +807,42 @@
 /* ---------- Erzwungener Kontrastmodus (z. B. Windows) ---------- */
 
 /*
- * Als <img> eingebundene SVG-Icons werden hier nicht umgefaerbt. Damit die
- * Buttons trotzdem als Buttons erkennbar bleiben, bekommen sie einen Rahmen
- * in der vom System vorgegebenen Textfarbe.
+ * Die Icons sind Inline-SVG mit fill: currentColor. Der erzwungene
+ * Kontrastmodus ersetzt "color" durch eine Systemfarbe (in Knoepfen:
+ * ButtonText) - die Icons faerben sich dadurch von selbst korrekt mit.
+ * "fill" wird vom Modus NICHT ersetzt, deshalb ist currentColor hier der
+ * entscheidende Trick und kein Zufall. Als <img> eingebundene Bilddateien
+ * konnten das nicht, das war der Grund fuer die Umstellung.
+ *
+ * Die Rahmen unten bleiben trotzdem noetig: sie halten die Knoepfe als
+ * Knoepfe erkennbar, wenn der Modus alle Flaechenfarben vereinheitlicht.
+ * Ausserdem gilt: Rahmen- und Umriss-BREITE und -STIL ueberleben den
+ * Modus, Farben nicht - deshalb wird nirgends "outline: none" gesetzt.
  */
 @media (forced-colors: active) {
-    .acb-toggle,
-    .acb-close,
-    .acb-mic,
-    .acb-send,
-    .acb-navigate,
-    .acb-choice,
-    .acb-starter,
-    .acb-reset,
-    .acb-confirm__button,
-    .acb-speak {
+    .acb-widget .acb-toggle,
+    .acb-widget .acb-close,
+    .acb-widget .acb-mic,
+    .acb-widget .acb-send,
+    .acb-widget .acb-navigate,
+    .acb-widget .acb-choice,
+    .acb-widget .acb-starter,
+    .acb-widget .acb-reset,
+    .acb-widget .acb-confirm__button,
+    .acb-widget .acb-speak {
         border: 0.125rem solid ButtonText;
+    }
+
+    /* Diese beiden Zustandsregeln stehen weiter oben in der Datei und haben
+       dieselbe Spezifitaet wie die Sammelregel darueber - sie wuerden also
+       von ihr verdeckt. Deshalb hier wiederholt. Rahmenbreite ist das
+       richtige Mittel: Farben ersetzt das Betriebssystem im erzwungenen
+       Kontrastmodus, Breite und Stil ueberleben. */
+    .acb-widget .acb-mic[aria-pressed="true"] {
+        border-width: 0.25rem;
+    }
+
+    .acb-widget .acb-speak[data-acb-speaking] {
+        border-width: 0.1875rem;
     }
 }

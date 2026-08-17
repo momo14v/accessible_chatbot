@@ -167,6 +167,10 @@
                 <source>The assistant is not set up yet. Please tell the operator of this website.</source>
                 <target>Der Assistent ist noch nicht eingerichtet. Bitte der Betreiberin oder dem Betreiber dieser Website Bescheid sagen.</target>
             </trans-unit>
+            <trans-unit id="error.noindex">
+                <source>The assistant does not know the pages of this website yet. Please tell the operator of this website.</source>
+                <target>Der Assistent kennt die Seiten dieser Website noch nicht. Bitte der Betreiberin oder dem Betreiber dieser Website Bescheid sagen.</target>
+            </trans-unit>
             <trans-unit id="error.busy">
                 <source>The assistant has a lot to do right now. Please try again in a few minutes.</source>
                 <target>Der Assistent hat gerade sehr viel zu tun. Bitte in ein paar Minuten noch einmal versuchen.</target>
@@ -250,6 +254,10 @@
             <trans-unit id="status.contextlimit">
                 <source>This conversation is getting long. I only keep the last 10 messages in mind. Older messages are still here to read, but I no longer use them for my answers.</source>
                 <target>Dieses Gespräch wird lang. Ich merke mir nur die letzten 10 Nachrichten. Ältere Nachrichten stehen weiter zum Nachlesen hier, für meine Antworten nutze ich sie aber nicht mehr.</target>
+            </trans-unit>
+            <trans-unit id="status.storageunavailable">
+                <source>This browser cannot save the conversation. It stays here as long as you are on this page. It is gone as soon as you go to another page.</source>
+                <target>Dieser Browser kann das Gespräch nicht speichern. Es bleibt erhalten, solange diese Seite offen ist. Beim Wechsel auf eine andere Seite ist es weg.</target>
             </trans-unit>
             <trans-unit id="readaloud.start">
                 <source>Read the answer aloud</source>

@@ -8,6 +8,7 @@ use Extension14v\AccessibleChatbot\Retrieval\PageHit;
 use Extension14v\AccessibleChatbot\Retrieval\RetrievalResult;
 use Extension14v\AccessibleChatbot\Retrieval\SitemapEntry;
 use Psr\Log\LoggerInterface;
+use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Context\Context;
 use TYPO3\CMS\Core\Database\Connection;
 use TYPO3\CMS\Core\Database\ConnectionPool;
@@ -74,6 +75,9 @@ final class RetrievalService
     private const MAX_TREE_DEPTH = 99;
     private const CHUNK_SIZE = 500;
 
+    /** Konzept 11, Phase 8, Aufgabe 6: Marke zum gezielten Leeren beim Indexieren. */
+    public const SITEMAP_CACHE_TAG = 'accessible_chatbot_sitemap';
+
     /**
      * Gewichtung der Fundstellen (Konzept 4.4, Schritt 3).
      * nav_title zaehlt wie title - es ist ebenfalls ein Titel.
@@ -126,6 +130,7 @@ final class RetrievalService
         private readonly ConnectionPool $connectionPool,
         private readonly FrontendContextFactory $contextFactory,
         private readonly RootLineAccessChecker $rootLineChecker,
+        private readonly FrontendInterface $cache,
         #[Channel('accessible_chatbot')]
         private readonly LoggerInterface $logger,
     ) {}
@@ -144,7 +149,7 @@ final class RetrievalService
         $keywords = $this->keywords($question);
         $hits = $keywords === [] ? [] : $this->findHits($keywords, $site, $language);
         $hits = $this->stillVisible($hits, $context);
-        [$sitemap, $truncated] = $this->buildSitemap($site, $language, $context);
+        [$sitemap, $truncated] = $this->cachedSitemap($site, $language, $context);
 
         return new RetrievalResult($hits, $sitemap, $truncated);
     }
@@ -422,6 +427,44 @@ final class RetrievalService
      * ---------------------------------------------------------------- */
 
     /**
+     * Sitemap-Kompakt aus dem Zwischenspeicher, sonst neu bauen.
+     *
+     * Der Schluessel enthaelt Website, Sprache UND die Einstellung
+     * maxIndexPagesFullSitemap: das Retrieval filtert immer auf Website und
+     * Sprache gemeinsam, und eine geaenderte Einstellung ergibt eine andere
+     * Liste. Stuende sie nicht im Schluessel, bekaeme man nach einer
+     * Umstellung weiter die alte Liste. Der Wert wird gehasht, weil ein
+     * Cache-Schluessel nur bestimmte Zeichen enthalten darf - eine
+     * site_identifier darf aber auch Punkte enthalten.
+     *
+     * Bewusst KEINE Lebensdauer im Aufruf: 0 hiesse "unbegrenzt", null hiesse
+     * "Standard". Die Lebensdauer steht an genau einer Stelle, in
+     * ext_localconf.php.
+     *
+     * @return array{0: list<SitemapEntry>, 1: bool}
+     */
+    private function cachedSitemap(Site $site, SiteLanguage $language, Context $context): array
+    {
+        $maxFull = $this->maxPagesFullSitemap($site);
+        $identifier = 'sitemap_' . sha1(
+            $site->getIdentifier() . '|' . $language->getLanguageId() . '|' . $maxFull
+        );
+
+        $cached = $this->cache->get($identifier);
+
+        // Formpruefung statt blindem Vertrauen: nach einem Update koennte im
+        // Speicher noch eine aeltere Struktur liegen.
+        if (is_array($cached) && count($cached) === 2 && is_array($cached[0]) && is_bool($cached[1])) {
+            return $cached;
+        }
+
+        $result = $this->buildSitemap($site, $language, $context, $maxFull);
+        $this->cache->set($identifier, $result, [self::SITEMAP_CACHE_TAG]);
+
+        return $result;
+    }
+
+    /**
      * Hierarchische Liste aller navigierbaren Seiten dieser Website/Sprache.
      *
      * Grundlage ist der Inhaltsindex - er kann aber VERALTETE Zeilen
@@ -433,7 +476,7 @@ final class RetrievalService
      *
      * @return array{0: list<SitemapEntry>, 1: bool}
      */
-    private function buildSitemap(Site $site, SiteLanguage $language, Context $context): array
+    private function buildSitemap(Site $site, SiteLanguage $language, Context $context, int $maxFull): array
     {
         $queryBuilder = $this->connectionPool->getQueryBuilderForTable(IndexService::TABLE);
         $expr = $queryBuilder->expr();
@@ -523,7 +566,6 @@ final class RetrievalService
 
         $truncated = false;
 
-        $maxFull = $this->maxPagesFullSitemap($site);
         if (count($entries) > $maxFull) {
             $shortened = array_values(array_filter(
                 $entries,

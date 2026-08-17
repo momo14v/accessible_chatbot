@@ -136,7 +136,11 @@ final class ChatEndpointMiddleware implements MiddlewareInterface
                     ['site' => $site->getIdentifier()]
                 );
 
-                return $this->errorResponse(403, 'forbidden', 'error.forbidden', $language);
+                // HTTP 403 bleibt (Konzept 4.3), nur der Text aendert sich: "Seite neu
+                // laden" hilft hier nicht, weil die Einrichtung fehlt - Konzept 8.6
+                // verlangt, dass eine Fehlermeldung sagt, was die Nutzerin oder der
+                // Nutzer TUN kann.
+                return $this->errorResponse(403, 'forbidden', 'error.notconfigured', $language);
             }
 
             // 5. Rate-Limit. Bewusst NACH der Pruefung der Nutzdaten: ein

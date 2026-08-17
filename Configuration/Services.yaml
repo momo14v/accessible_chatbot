@@ -55,3 +55,20 @@ services:
   # versuchen und bei jedem Speichern im Backend abstuerzen.
   Extension14v\AccessibleChatbot\Hook\IndexUpdateHook:
     public: true
+
+  # Der Zwischenspeicher fuer die Sitemap-Kompakt (Konzept 4.4, Schritt 4).
+  # Autowiring kann nicht erraten, WELCHER Cache gemeint ist - deshalb ein
+  # benannter Dienst plus ausdruecklich ein Argument an beiden Klassen.
+  # CacheManager wird bewusst NICHT in die Fachklassen injiziert.
+  cache.accessible_chatbot_sitemap:
+    class: TYPO3\CMS\Core\Cache\Frontend\FrontendInterface
+    factory: ['@TYPO3\CMS\Core\Cache\CacheManager', 'getCache']
+    arguments: ['accessible_chatbot_sitemap']
+
+  Extension14v\AccessibleChatbot\Service\RetrievalService:
+    arguments:
+      $cache: '@cache.accessible_chatbot_sitemap'
+
+  Extension14v\AccessibleChatbot\Service\IndexService:
+    arguments:
+      $cache: '@cache.accessible_chatbot_sitemap'

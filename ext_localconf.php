@@ -39,3 +39,33 @@ $GLOBALS['TYPO3_CONF_VARS']['SC_OPTIONS']['t3lib/class.t3lib_tcemain.php']['proc
 
 $GLOBALS['TYPO3_CONF_VARS']['SC_OPTIONS']['t3lib/class.t3lib_tcemain.php']['processCmdmapClass']['accessible_chatbot']
     = \Extension14v\AccessibleChatbot\Hook\IndexUpdateHook::class;
+
+// Zwischenspeicher fuer die Sitemap-Kompakt (Konzept 4.4, Schritt 4).
+//
+// Ohne eigene Angaben nimmt TYPO3 VariableFrontend + Typo3DatabaseBackend -
+// beides ist hier genau richtig, deshalb steht nur die Lebensdauer hier.
+//
+// defaultLifetime hat zwei Aufgaben: es ist das Sicherheitsnetz, falls die
+// Invalidierung beim Indexieren einmal ausfaellt, UND es begrenzt, wie lange
+// eine inzwischen abgelaufene Seite noch in der Seitenliste stehen kann
+// (Konzept 4.4, Schritt 5). Eine Stunde ist die Festlegung von Momo vom
+// 2026-08-17: kurz genug, dass zeitgesteuerte Sichtbarkeit nicht lange
+// falsch bleibt, lang genug, um die Datenbank spuerbar zu entlasten.
+//
+// ACHTUNG bei set(): $lifetime = null bedeutet "Standard benutzen",
+// $lifetime = 0 bedeutet UNBEGRENZT - nicht "sofort abgelaufen".
+// Der Aufruf im RetrievalService uebergibt deshalb gar keine Lebensdauer.
+//
+// Gruppe bewusst NICHT gesetzt: der Standard ist ['all'], ein normales
+// "Alle Caches leeren" raeumt den Zwischenspeicher also mit auf. Das ist hier
+// - anders als beim Rate-Limiter - ausdruecklich erwuenscht.
+//
+// Das Backend muss "taggable" sein, weil die Invalidierung ueber
+// flushByTag() laeuft. Typo3DatabaseBackend (der Standard hier) ist es;
+// ein spaeter in settings.php eingetragenes SimpleFileBackend waere es
+// nicht und wuerde beim Indexieren eine Ausnahme werfen.
+$GLOBALS['TYPO3_CONF_VARS']['SYS']['caching']['cacheConfigurations']['accessible_chatbot_sitemap'] ??= [
+    'options' => [
+        'defaultLifetime' => 3600,
+    ],
+];
