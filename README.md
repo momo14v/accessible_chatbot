@@ -321,6 +321,10 @@ sie das Chatfenster erreicht.
 - ein Sternchen **innerhalb** eines Wortes, zum Beispiel in „Autor*innen"
   (siehe „Sprachform der Antworten") - nur ein Sternchen, das ein Wort oder
   einen Satzteil einrahmt, gilt als Markdown-Betonung.
+- Zahlen am Zeilenanfang, die ein Datum sind („13. August ist Feiertag.") -
+  eine Nummer wird nur dann als Listenzeichen entfernt, wenn mehrere Zeilen
+  eine echte Nummernfolge bilden (1., 2., 3. …) und keine davon mit einem
+  Monatsnamen weitergeht.
 
 Der Filter darf den Sinn nicht verändern - er entfernt Auszeichnung, nicht
 Inhalt.

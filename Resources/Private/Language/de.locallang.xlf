@@ -48,8 +48,12 @@
                 <target>Hallo! Ich bin %s, der Assistent dieser Website. Ich beantworte Fragen zu den Inhalten dieser Website und zeige auf Wunsch den Weg zur passenden Seite.</target>
             </trans-unit>
             <trans-unit id="status.typing">
-                <source>%s is writing an answer …</source>
-                <target>%s schreibt eine Antwort …</target>
+                <source>%s is writing an answer … The "Send" button is now called "Cancel the answer" and stops it.</source>
+                <target>%s schreibt eine Antwort … Der Knopf „Senden“ heißt jetzt „Antwort abbrechen“ und stoppt sie.</target>
+            </trans-unit>
+            <trans-unit id="status.busy">
+                <source>%s is still writing. Please wait for the answer, or press "Cancel the answer".</source>
+                <target>%s schreibt noch. Bitte auf die Antwort warten oder „Antwort abbrechen“ drücken.</target>
             </trans-unit>
             <trans-unit id="status.newanswer">
                 <source>New answer from %s. You can read it in the conversation.</source>

@@ -37,7 +37,10 @@
                 <source>Hello! I am %s, the assistant for this website. I answer questions about the content of this website and I can take you to the right page.</source>
             </trans-unit>
             <trans-unit id="status.typing">
-                <source>%s is writing an answer …</source>
+                <source>%s is writing an answer … The "Send" button is now called "Cancel the answer" and stops it.</source>
+            </trans-unit>
+            <trans-unit id="status.busy">
+                <source>%s is still writing. Please wait for the answer, or press "Cancel the answer".</source>
             </trans-unit>
             <trans-unit id="status.newanswer">
                 <source>New answer from %s. You can read it in the conversation.</source>

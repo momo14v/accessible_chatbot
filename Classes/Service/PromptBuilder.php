@@ -210,11 +210,11 @@ final class PromptBuilder
      */
     private static function safeData(string $text): string
     {
-        return trim((string)preg_replace(
+        return trim(preg_replace(
             ['/={2,}/u', '/-{3,}/u', '/\R/u'],
             ['=', '-', ' '],
             $text
-        ));
+        ) ?? $text);
     }
 
     /**
@@ -228,11 +228,11 @@ final class PromptBuilder
      */
     private static function safeContent(string $text): string
     {
-        return trim((string)preg_replace(
+        return trim(preg_replace(
             ['/={2,}/u', '/-{3,}/u'],
             ['=', '-'],
             $text
-        ));
+        ) ?? $text);
     }
 
     /**
@@ -272,7 +272,7 @@ final class PromptBuilder
     private static function text(mixed $value, string $default): string
     {
         $text = is_scalar($value) ? trim((string)$value) : '';
-        $text = trim((string)preg_replace('/["\r\n\t]+/', ' ', $text));
+        $text = trim(preg_replace('/["\r\n\t]+/', ' ', $text) ?? $text);
         $text = mb_substr($text, 0, 60);
 
         return $text !== '' ? $text : $default;

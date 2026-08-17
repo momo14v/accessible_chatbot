@@ -56,10 +56,12 @@
                         <div id="acb-starters" class="acb-msg__actions">
                             <span id="acb-starters-intro" class="acb-msg__actions-intro"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:starter.intro" /></span>
                             <ul class="acb-msg__choices" role="list" aria-labelledby="acb-starters-intro">
-                                <f:for each="{f:split(value: settings.starterQuestions, separator: '|')}" as="starterQuestion" iteration="starterIteration">
-                                    <f:if condition="{starterIteration.index} < 4">
+                                <f:variable name="starterCount" value="0" />
+                                <f:for each="{f:split(value: settings.starterQuestions, separator: '|')}" as="starterQuestion">
+                                    <f:if condition="{starterCount} < 4">
                                         <f:if condition="{starterQuestion -> f:format.trim()}">
                                             <li><button type="button" class="acb-starter"><f:format.trim value="{starterQuestion}" /></button></li>
+                                            <f:variable name="starterCount" value="{starterCount + 1}" />
                                         </f:if>
                                     </f:if>
                                 </f:for>
@@ -145,6 +147,7 @@
         <span data-acb-key="sender.user"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:message.sender.user" /></span>
         <span data-acb-key="sender.bot"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:message.sender.bot" arguments="{0: settings.botName}" /></span>
         <span data-acb-key="status.typing"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:status.typing" arguments="{0: settings.botName}" /></span>
+        <span data-acb-key="status.busy"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:status.busy" arguments="{0: settings.botName}" /></span>
         <span data-acb-key="status.newanswer"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:status.newanswer" arguments="{0: settings.botName}" /></span>
         <span data-acb-key="error.empty"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:error.empty" /></span>
         <span data-acb-key="error.request"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:error.request" /></span>

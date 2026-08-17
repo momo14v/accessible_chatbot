@@ -40,11 +40,8 @@ const MAX_TITLE_LENGTH = 120;
  */
 const ANNOUNCE_FULL_MAX_CHARS = 160;
 
-const widgetElement = document.getElementById('acb-widget');
-
-if (widgetElement !== null) {
-    initialiseWidget(widgetElement);
-}
+/* Muss zu Extension14v\AccessibleChatbot\Http\GenderStyle passen (Konzept 8.8). */
+const GENDER_STYLES = ['neutral', 'pair', 'asterisk'];
 
 /* ------------------------------------------------------------------ *
  * Hilfsfunktionen ohne Zustand
@@ -124,9 +121,6 @@ function readNumber(value) {
 
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
-
-/* Muss zu Extension14v\AccessibleChatbot\Http\GenderStyle passen (Konzept 8.8). */
-const GENDER_STYLES = ['neutral', 'pair', 'asterisk'];
 
 /**
  * Prueft einen Sprachform-Wert, bevor er uebernommen wird.
@@ -575,6 +569,13 @@ function initialiseWidget(root) {
     // erscheinen (siehe requestReply()/sendMessage()).
     let conversationEpoch = 0;
 
+    // Der aktive Escape-Waechter (CloseWatcher). Er lebt GENAU so lange wie
+    // das offene Chatfenster - siehe armCloseWatcher(). Ist er null, gibt es
+    // keinen: dann uebernimmt der keydown-Rueckfallweg. Diese eine Variable
+    // entscheidet damit auch, welcher der beiden Wege laeuft - beide
+    // gleichzeitig waere Doppelausfuehrung bei einem Tastendruck.
+    let closeWatcher = null;
+
     /* ---------- kleine Helfer mit Zugriff auf den Zustand ---------- */
 
     function scrollLogToEnd(force) {
@@ -723,6 +724,96 @@ function initialiseWidget(root) {
     }
 
     /**
+     * Die EINE Stelle, die entscheidet, was ein Schliess-Wunsch ausloest -
+     * egal ob er als Escape-Taste, als Android-Zurueck-Taste oder ueber den
+     * keydown-Rueckfallweg ankommt. Beide Wege rufen ausschliesslich sie auf,
+     * damit sich das Verhalten nie auseinanderentwickelt.
+     *
+     * Rueckgabe: true, wenn der Fokus beim Aufruf IM Widget stand. Genau dann
+     * unterdrueckt der Rueckfallweg das Standardverhalten von Escape.
+     */
+    function handleCloseRequest() {
+        if (refs.dialog.hidden) {
+            return false;
+        }
+
+        // Der Fokus wird nur bewegt, wenn er vorher ueberhaupt im Widget
+        // stand (Konzept 8.3). document.activeElement ist hier noch
+        // aussagekraeftig: der Browser verarbeitet Close-Watcher erst NACH
+        // dem keydown, und weder er noch dieses Widget bewegt bei Escape von
+        // sich aus den Fokus. Vorher merken geht ohnehin nicht - die
+        // Android-Zurueck-Taste liefert gar kein Tastaturereignis.
+        const focusWasInsideWidget = root.contains(document.activeElement);
+
+        // Steht die Rueckfrage vor dem Loeschen offen, geht es zuerst nur
+        // einen Schritt zurueck, nicht gleich ganz zu (COGA 4.5.2) - und nur
+        // bei Fokus IM Widget, sonst zoege setResetConfirmOpen() den Fokus
+        // von aussen herein (Review Phase 7, S3).
+        if (refs.resetConfirm && !refs.resetConfirm.hidden && focusWasInsideWidget) {
+            setResetConfirmOpen(false);
+            return true;
+        }
+
+        setOpen(false, focusWasInsideWidget);
+        return focusWasInsideWidget;
+    }
+
+    /**
+     * Stellt den standardisierten Schliess-Waechter scharf (CloseWatcher).
+     * Vorteile gegenueber einem eigenen keydown-Handler: der Browser reiht
+     * das Widget in den Stapel aller schliessbaren Dinge ein, respektiert
+     * automatisch ein preventDefault() fremder Komponenten und deckt die
+     * Android-Zurueck-Taste mit ab.
+     *
+     * Kann der Browser das nicht (Stand 08/2026 vor allem Safari), bleibt
+     * closeWatcher null - und nur dann greift der keydown-Rueckfallweg.
+     */
+    function armCloseWatcher() {
+        if (closeWatcher !== null || !('CloseWatcher' in window)) {
+            return;
+        }
+
+        try {
+            const watcher = new window.CloseWatcher();
+
+            watcher.addEventListener('close', () => {
+                // Der Browser hat den Waechter bereits verbraucht - er wird
+                // vor dem Feuern dieses Ereignisses zerstoert.
+                closeWatcher = null;
+
+                handleCloseRequest();
+
+                // Ging nur die Rueckfrage zu, ist das Fenster noch offen und
+                // braucht sofort einen frischen Waechter fuer das naechste
+                // Escape - ein verbrauchter waechst nicht nach.
+                if (!refs.dialog.hidden) {
+                    armCloseWatcher();
+                }
+            });
+
+            closeWatcher = watcher;
+        } catch (error) {
+            // Liesse sich kein Waechter erzeugen, bliebe das Widget sonst
+            // ganz ohne Escape. closeWatcher bleibt null, der Rueckfallweg
+            // uebernimmt.
+            closeWatcher = null;
+        }
+    }
+
+    /** Nimmt den Waechter zurueck, sobald das Fenster zu ist. Ein dauerhaft
+     *  lebender Waechter wuerde Escape auch bei geschlossenem Chat fuer sich
+     *  beanspruchen - schlechter als gar keiner. */
+    function disarmCloseWatcher() {
+        if (closeWatcher === null) {
+            return;
+        }
+
+        const watcher = closeWatcher;
+        closeWatcher = null;
+        watcher.destroy();
+    }
+
+    /**
      * Oeffnet oder schliesst den Dialog und haelt aria-expanded,
      * die Button-Beschriftung und den gespeicherten Zustand synchron.
      *
@@ -738,6 +829,9 @@ function initialiseWidget(root) {
         writeState(state);
 
         if (open) {
+            // Der Escape-Waechter lebt genau so lange wie das offene Fenster.
+            armCloseWatcher();
+
             scrollLogToEnd(true);
 
             // Nachgemerkte Ansage nachholen, siehe announce().
@@ -750,8 +844,12 @@ function initialiseWidget(root) {
             if (moveFocus) {
                 refs.input.focus();
             }
-        } else if (moveFocus) {
-            refs.toggle.focus();
+        } else {
+            disarmCloseWatcher();
+
+            if (moveFocus) {
+                refs.toggle.focus();
+            }
         }
     }
 
@@ -891,13 +989,12 @@ function initialiseWidget(root) {
         // Sonst bekaeme jemand, der den Tipp-Hinweis nicht sehen kann,
         // ueberhaupt keine Rueckmeldung.
         if (awaitingReply) {
-            announce(labels['status.typing'] ?? '');
+            announce(labels['status.busy'] ?? labels['status.typing'] ?? '');
             return;
         }
 
         addMessage({ role: 'user', text });
         refs.input.value = '';
-        showTyping();
 
         // Kontextgrenze (Konzept 4.6): faellt mit dieser Nachricht die
         // erste aeltere Nachricht aus dem mitgesendeten Verlauf heraus, wird
@@ -911,6 +1008,10 @@ function initialiseWidget(root) {
             contextNoticeShown = true;
             addSystemMessage(labels['status.contextlimit'] ?? '', false, 'acb-msg--note');
         }
+
+        // Erst danach die Tipp-Zeile: sie gehoert ans Ende des Verlaufs, der
+        // Hinweis zur Kontextgrenze davor (Review Phase 7, N7).
+        showTyping();
 
         // Das Protokoll hat kein aria-live mehr; der Tipp-Status wird deshalb
         // hier EINMAL angesagt (Konzept 8.3) und nie auf einem Timer wiederholt.
@@ -1054,6 +1155,10 @@ function initialiseWidget(root) {
         setStartersVisible(true);
         setResetConfirmOpen(false);
         scrollLogToEnd(true);
+
+        // Kernprinzip 4: die Bestaetigung bleibt nachlesbar im (jetzt
+        // geleerten) Verlauf stehen.
+        addSystemMessage(labels['status.conversationreset'] ?? '', false, 'acb-msg--note');
         announce(labels['status.conversationreset'] ?? '');
     }
 
@@ -1162,16 +1267,22 @@ function initialiseWidget(root) {
                 handled = true;
                 starting = false;
 
+                let text;
                 if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                    announce(labels['mic.denied'] ?? '');
+                    text = labels['mic.denied'] ?? '';
                 } else if (event.error === 'no-speech') {
-                    announce(labels['mic.nospeech'] ?? '');
+                    text = labels['mic.nospeech'] ?? '';
                 } else {
                     // Deckt u. a. "language-not-supported" ab: kommt beim
                     // lokalen Weg vor, wenn das Sprachpaket zwischenzeitlich
                     // fehlt, obwohl "available()" zuvor "available" meldete.
-                    announce(labels['mic.error'] ?? '');
+                    text = labels['mic.error'] ?? '';
                 }
+
+                // Kernprinzip 4 / Konzept 8.3: nichts existiert nur als
+                // fluechtige Ansage - die Stoerung bleibt nachlesbar.
+                addSystemMessage(text, false, 'acb-msg--note');
+                announce(text);
             });
 
             instance.addEventListener('end', () => {
@@ -1454,35 +1565,38 @@ function initialiseWidget(root) {
         setOpen(false, true);
     });
 
-    // Bewusst am Dokument: Wer nach dem Oeffnen in die Seite geklickt hat,
-    // muss den Chat trotzdem mit Escape schliessen koennen.
+    // RUECKFALLWEG fuer Browser ohne CloseWatcher (Stand 08/2026 vor allem
+    // Safari - also fuer einen erheblichen Teil der Besucher der Normalfall,
+    // nicht die Ausnahme). Bewusst am Dokument: Wer nach dem Oeffnen in die
+    // Seite geklickt hat, muss den Chat trotzdem mit Escape schliessen
+    // koennen.
+    //
+    // Die Pruefung auf closeWatcher stellt sicher, dass IMMER nur genau einer
+    // der beiden Wege laeuft. Der Browser feuert erst dieses keydown und erst
+    // danach die Close-Watcher; liefen beide, wuerde ein einziger Tastendruck
+    // alles doppelt ausloesen. Umgekehrt laesst sich hier auch nicht an
+    // event.defaultPrevented ablesen, ob ein Waechter schon reagiert hat -
+    // dieser Handler laeuft dafuer zu frueh.
     document.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape' || refs.dialog.hidden) {
+        if (event.key !== 'Escape' || closeWatcher !== null || refs.dialog.hidden) {
             return;
         }
 
-        // Steht die Rueckfrage vor dem Loeschen des Gespraechs offen, schliesst
-        // Escape zuerst nur SIE - nicht gleich das ganze Widget (COGA 4.5.2:
-        // ein Schritt zurueck statt ein grosser Sprung).
-        if (refs.resetConfirm && !refs.resetConfirm.hidden) {
-            event.preventDefault();
-            setResetConfirmOpen(false);
+        // Hoeflichkeit gegenueber der uebrigen Seite: hat eine andere
+        // Komponente den Tastendruck bereits fuer sich beansprucht, haelt der
+        // Chat sich heraus. Der CloseWatcher-Weg macht genau das von selbst -
+        // der Browser reicht ein abgefangenes Escape gar nicht erst an die
+        // Waechter weiter.
+        if (event.defaultPrevented) {
             return;
         }
 
-        // Der Fokus wird nur dann auf den Chat-Knopf zurueckgegeben, wenn er
-        // vorher ueberhaupt im Widget stand. Sonst wuerde Escape den Nutzer
-        // unangekuendigt aus der Seite ins Widget reissen (Konzept 8.3).
-        // Aus demselben Grund wird das Standardverhalten von Escape nur dann
-        // unterdrueckt - fremde Komponenten der Seite duerfen nicht blockiert
-        // werden.
-        const focusWasInsideWidget = root.contains(document.activeElement);
-
-        if (focusWasInsideWidget) {
+        // Das Standardverhalten wird nur unterdrueckt, wenn der Fokus im
+        // Widget stand - fremde Komponenten der Seite duerfen nicht blockiert
+        // werden (Konzept 8.3). Das entspricht 1:1 dem bisherigen Verhalten.
+        if (handleCloseRequest()) {
             event.preventDefault();
         }
-
-        setOpen(false, focusWasInsideWidget);
     });
 
     /*
@@ -1551,7 +1665,7 @@ function initialiseWidget(root) {
             // Entwurf im Eingabefeld nicht ueberschreiben - sendMessage()
             // wuerde ohnehin sofort zurueckkehren, der Text waere aber weg.
             if (awaitingReply) {
-                announce(labels['status.typing'] ?? '');
+                announce(labels['status.busy'] ?? labels['status.typing'] ?? '');
 
                 return;
             }
@@ -1577,7 +1691,7 @@ function initialiseWidget(root) {
 
         if (starter !== null) {
             if (awaitingReply) {
-                announce(labels['status.typing'] ?? '');
+                announce(labels['status.busy'] ?? labels['status.typing'] ?? '');
 
                 return;
             }
@@ -1653,4 +1767,10 @@ function initialiseWidget(root) {
             }
         });
     });
+}
+
+const widgetElement = document.getElementById('acb-widget');
+
+if (widgetElement !== null) {
+    initialiseWidget(widgetElement);
 }
