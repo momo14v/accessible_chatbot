@@ -50,16 +50,47 @@ const GENDER_STYLES = ['neutral', 'pair', 'asterisk'];
 /**
  * Baut die Adresse des Endpunkts.
  *
- * Grundlage ist der Pfad-Anteil der TYPO3-Installation, den der Server als
- * data-Attribut mitgibt (z. B. "/" oder "/unterverzeichnis/"). Die Herkunft
- * (Schema und Host) kommt immer aus der aktuell aufgerufenen Adresse - so
- * bleibt die Anfrage garantiert bei derselben Herkunft.
+ * Grundlage ist die Basis-Adresse der AKTUELLEN Sprache (SiteLanguage), die
+ * der Server als data-Attribut mitgibt (siehe Widget.typoscript, "siteUrl").
+ * Hier wird daraus NUR der Pfad-Anteil entnommen - die Herkunft (Schema und
+ * Host) kommt immer aus der aktuell aufgerufenen Adresse. So bleibt die
+ * Anfrage garantiert bei derselben Herkunft, es entsteht NIEMALS eine
+ * fremde (cross-origin) Adresse.
+ *
+ * WICHTIG - kein getIndpEnv:TYPO3_SITE_PATH mehr auf der Server-Seite: ab
+ * TYPO3 14.2 kennt die dortige match()-Liste diesen Schluessel nicht mehr
+ * (siehe Kommentar in Widget.typoscript) und liefert still eine leere
+ * Zeichenkette. Deshalb schickt der Server seit Phase 8 die volle Adresse
+ * und der Pfad wird erst hier, im Browser, herausgeloest.
+ *
+ * FALLE - fehlender Schraegstrich am Ende: Site::sanitizeBaseUrl() haengt
+ * KEINEN abschliessenden "/" an. Ist die Sprachbasis z. B. "/en" (statt
+ * "/en/"), wuerde new URL(ENDPOINT_PATH, ".../en") das letzte Pfadsegment
+ * ("en") als Dateinamen behandeln und beim Aufloesen von "-/..." verwerfen -
+ * der Sprachanteil ginge damit lautlos verloren. Deshalb wird hier IMMER ein
+ * abschliessender Schraegstrich erzwungen, bevor ENDPOINT_PATH dagegen
+ * aufgeloest wird.
  */
-function buildEndpointUrl(basePath) {
+function buildEndpointUrl(siteUrl) {
+    let basePath = '/';
+
     try {
-        return new URL(ENDPOINT_PATH, new URL(basePath || '/', window.location.href)).href;
+        basePath = siteUrl ? (new URL(siteUrl, window.location.href).pathname || '/') : '/';
     } catch (error) {
-        return new URL('/' + ENDPOINT_PATH, window.location.origin).href;
+        basePath = '/';
+    }
+
+    if (!basePath.endsWith('/')) {
+        basePath += '/';
+    }
+
+    try {
+        return new URL(ENDPOINT_PATH, new URL(basePath, window.location.href)).href;
+    } catch (error) {
+        // Derselbe Rueckfall wie oben, kein zweiter, abweichender Pfad:
+        // sonst wuerde genau dieser Zweig nach der Reparatur oben den
+        // Sprachanteil erneut verlieren, wenn er doch einmal greift.
+        return new URL(ENDPOINT_PATH, new URL(basePath, window.location.origin)).href;
     }
 }
 
@@ -515,7 +546,7 @@ function initialiseWidget(root) {
     const labels = readLabels(root);
 
     // Vom Server mitgegebene Werte (siehe Widget.typoscript, Block "variables").
-    const endpointUrl = buildEndpointUrl(root.dataset.acbBasePath);
+    const endpointUrl = buildEndpointUrl(root.dataset.acbSiteUrl);
     const pageUid = readNumber(root.dataset.acbPageUid);
     const languageUid = readNumber(root.dataset.acbLanguageUid);
     // Fertige Adresse vom Server. Wird nur als Fallback in Stoermeldungen
@@ -630,7 +661,13 @@ function initialiseWidget(root) {
      * (u. a. NVDA in Firefox) registrieren die Aenderung dann nicht als neue
      * Ansage. 120 ms sind zuverlaessiger.
      */
-    function announce(message) {
+    /**
+     * delayMs: normalerweise 120 (siehe Standardwert). Der Aufruf beim
+     * Nachholen einer gemerkten Ansage in setOpen() uebergibt bewusst einen
+     * laengeren Wert (~700 ms) - siehe Begruendung dort. Alle anderen
+     * Aufrufstellen in dieser Datei bleiben unveraendert bei 120 ms.
+     */
+    function announce(message, delayMs = 120) {
         // Ist das Chatfenster zu, liegt die Ansage-Region in einem
         // display:none-Bereich und wird von Screenreadern nicht vorgelesen.
         // Die Ansage wird dann gemerkt und beim naechsten Oeffnen nachgeholt
@@ -655,7 +692,7 @@ function initialiseWidget(root) {
             announceTimeout = window.setTimeout(() => {
                 announceTimeout = null;
                 refs.status.textContent = message;
-            }, 120);
+            }, delayMs);
         }
     }
 
@@ -856,10 +893,20 @@ function initialiseWidget(root) {
             scrollLogToEnd(true);
 
             // Nachgemerkte Ansage nachholen, siehe announce().
+            //
+            // Bewusst mit ~700 statt der sonst ueblichen 120 ms: #acb-status
+            // liegt INNERHALB von #acb-dialog, das bis eben noch "hidden"
+            // war und damit fuer den Accessibility-Baum gar nicht existiert
+            // hat. 120 ms nach dem Entfernen von "hidden" ist fuer mehrere
+            // Screenreader zu frueh, um die neu erschienene role="status"-
+            // Region ueberhaupt schon zu kennen - die nachgeholte Ansage
+            // ginge dann trotz dieser Logik lautlos unter. Das Element wird
+            // dabei NICHT verschoben, nur die Wartezeit dieses einen Aufrufs
+            // verlaengert.
             if (pendingAnnouncement !== '') {
                 const pending = pendingAnnouncement;
                 pendingAnnouncement = '';
-                announce(pending);
+                announce(pending, 700);
             }
 
             if (moveFocus) {
@@ -867,6 +914,18 @@ function initialiseWidget(root) {
             }
         } else {
             disarmCloseWatcher();
+
+            // Ohne das bliebe eine veraltete Meldung (z. B. "Vorlesen
+            // angehalten.") sichtbar stehen und wuerde beim naechsten
+            // Oeffnen fuer Sehende sichtbar, obwohl sie laengst nicht mehr
+            // stimmt. Direkt geleert statt ueber announce(): die Region
+            // liegt jetzt in einem hidden-Bereich, announce() wuerde den
+            // Text nur fuer eine spaetere Ansage merken statt ihn zu leeren.
+            if (announceTimeout !== null) {
+                window.clearTimeout(announceTimeout);
+                announceTimeout = null;
+            }
+            refs.status.textContent = '';
 
             if (moveFocus) {
                 refs.toggle.focus();
@@ -1000,7 +1059,16 @@ function initialiseWidget(root) {
         const text = refs.input.value.trim();
 
         if (text === '') {
+            // Konzept 8.3: Fehlermeldungen faellen NICHT unter die Ausnahme
+            // "reiner Bedienzustand" - sie muessen ins Protokoll UND
+            // angesagt werden, wie jede andere Stoerung auch.
+            addSystemMessage(labels['error.empty'] ?? '', false, 'acb-msg--note');
             announce(labels['error.empty'] ?? '');
+            // Bleibt gesetzt, bis der naechste "input"-Ereignis-Handler
+            // (siehe Ereignisse weiter unten) es wieder entfernt - solange
+            // zeigt aria-invalid Hilfstechnologien den ungueltigen Zustand
+            // des Feldes an.
+            refs.input.setAttribute('aria-invalid', 'true');
             refs.input.focus();
             return;
         }
@@ -1016,6 +1084,15 @@ function initialiseWidget(root) {
 
         addMessage({ role: 'user', text });
         refs.input.value = '';
+
+        // Konzept 8.6: die Einstiegsfragen sollen verschwinden, sobald ein
+        // eigenes Gespraech steht - unabhaengig davon, ob es durch einen
+        // Klick auf eine Einstiegsfrage ODER durch normales Eintippen
+        // entstanden ist. Vorher stand dieser Aufruf nur im Klick-Handler
+        // der Einstiegsfragen (siehe Ereignisse weiter unten) - beim Tippen
+        // blieben die vier Vorschlaege den ganzen Sitzungsverlauf ueber unter
+        // der Begruessung stehen und lenkten ab.
+        setStartersVisible(false);
 
         // Kontextgrenze (Konzept 4.6): faellt mit dieser Nachricht die
         // erste aeltere Nachricht aus dem mitgesendeten Verlauf heraus, wird
@@ -1122,11 +1199,21 @@ function initialiseWidget(root) {
 
     /**
      * Oeffnet oder schliesst die Rueckfrage vor dem Loeschen des Gespraechs
-     * (COGA 4.5.2). Der Fokus geht beim Oeffnen auf "Ja, Gespraech loeschen"
-     * (die vorsichtigere Voreinstellung waere "Nein" - aber die Frage selbst
-     * ist ueber aria-describedby an beiden Knoepfen verlinkt, sodass ein
-     * Screenreader sie in jedem Fall vorliest, bevor ein Knopf ausgeloest
-     * wird) und beim Schliessen zurueck auf den Ausloese-Knopf.
+     * (COGA 4.5.2).
+     *
+     * ACHTUNG - Tastenwiederholung (WCAG 3.3.4): der Fokus geht beim Oeffnen
+     * bewusst auf "Nein, Gespraech behalten", NICHT auf "Ja, Gespraech
+     * loeschen". Ein <button> loest bei Enter schon auf KEYDOWN aus, und ein
+     * gehaltenes Enter erzeugt wiederholte Keydown-Ereignisse. Stuende der
+     * Fokus auf "Ja", traefe die naechste Tastenwiederholung DIREKT den
+     * Loeschen-Knopf: ein einziges laenger gehaltenes Enter oeffnet die
+     * Rueckfrage und bestaetigt sie im selben Tastendruck - ohne dass die
+     * Frage je gelesen wurde, ohne Undo. Betroffen sind u. a. Personen mit
+     * Tremor, Spastik oder Schalter-/Scanning-Eingabegeraeten. Bei Space
+     * faellt das nicht auf (ein <button> loest bei Space erst beim KEYUP
+     * aus) - ein rein klickbasierter Test findet diesen Fehler deshalb nie.
+     * NICHT auf "Ja" "verbessern": die vorsichtigere Voreinstellung ist hier
+     * kein Geschmack, sondern die einzige Variante ohne diese Falle.
      */
     function setResetConfirmOpen(open) {
         if (!refs.resetConfirm || !refs.resetButton) {
@@ -1137,7 +1224,7 @@ function initialiseWidget(root) {
         refs.resetButton.setAttribute('aria-expanded', open ? 'true' : 'false');
 
         if (open) {
-            refs.resetYes?.focus();
+            refs.resetNo?.focus();
         } else {
             refs.resetButton.focus();
         }
@@ -1802,9 +1889,11 @@ function initialiseWidget(root) {
             }
 
             refs.input.value = starter.textContent ?? '';
+            // sendMessage() blendet die Einstiegsfragen jetzt selbst aus
+            // (Konzept 8.6, siehe dortiger Kommentar) - ein zweiter Aufruf
+            // hier waere nur eine wirkungslose Wiederholung.
             sendMessage();
             refs.input.focus();
-            setStartersVisible(false);
             scrollLogToEnd(true);
 
             return;
@@ -1838,6 +1927,12 @@ function initialiseWidget(root) {
     refs.form.addEventListener('submit', (event) => {
         event.preventDefault();
         sendMessage();
+    });
+
+    // Sobald wieder etwas im Feld steht, ist der zuvor gemeldete ungueltige
+    // Zustand (leere Nachricht, siehe sendMessage()) nicht mehr aktuell.
+    refs.input.addEventListener('input', () => {
+        refs.input.removeAttribute('aria-invalid');
     });
 
     // Der Sende-Knopf ist waehrend einer laufenden Antwort der Abbruch-

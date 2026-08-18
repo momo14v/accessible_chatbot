@@ -108,16 +108,23 @@ final class GeminiProvider implements AiProviderInterface
             // Sonst: naechste, abgespeckte Stufe versuchen.
         }
 
-        if ($status !== 200) {
+        // $response/$status bleiben null, wenn die foreach-Schleife oben
+        // schon bei der ERSTEN Stufe wegen "$remaining < 5" abbricht (bei
+        // einem sehr knapp konfigurierten Zeitbudget). Heute unerreichbar,
+        // weil ChatService::TIMEOUT_SECONDS bei 30 liegt - aber ein Wechsel
+        // dieser Konstante darf hier nicht in einem Null-Dereferenzierungs-
+        // fehler enden.
+        if ($response === null || $status !== 200) {
             throw new AiProviderException(
-                'AI service answered with HTTP status ' . $status,
+                'AI service answered with HTTP status ' . ($status ?? 'none'),
                 1755000203,
                 match (true) {
                     // 429 = Kontingent erschoepft, spaeter erneut versuchen
                     $status === 429 => 'error.busy',
                     // 401/403 = Schluessel fehlt, falsch oder ohne Rechte
                     $status === 401 || $status === 403 => 'error.notconfigured',
-                    // 400 = Anfrage kaputt, 5xx = Stoerung beim Anbieter
+                    // 400 = Anfrage kaputt, 5xx = Stoerung beim Anbieter,
+                    // null = keine Anfrage lief ueberhaupt
                     default => 'error.unavailable',
                 }
             );

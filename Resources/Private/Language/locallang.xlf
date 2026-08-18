@@ -25,7 +25,7 @@
                 <source>Conversation</source>
             </trans-unit>
             <trans-unit id="widget.log.hint">
-                <source>Use the arrow keys down and up to move from message to message. Home goes to the first message, End to the last one.</source>
+                <source>The arrow keys down and up move between messages instead of scrolling. Home goes to the first message, End to the last one.</source>
             </trans-unit>
             <trans-unit id="message.sender.user">
                 <source>You:</source>

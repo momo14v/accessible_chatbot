@@ -7,7 +7,7 @@
      data-acb-contact-url="{contactPageUrl}"
      data-acb-page-uid="{pageUid}"
      data-acb-language-uid="{languageUid}"
-     data-acb-base-path="{basePath}"
+     data-acb-site-url="{siteUrl}"
      data-acb-gender-default="{settings.genderStyleDefault}"
      data-acb-read-aloud="{settings.readAloudEnabled}">
 
@@ -103,7 +103,7 @@
         <p id="acb-mic-hint" class="acb-mic-hint" hidden><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.hint" /></p>
         <p id="acb-mic-unavailable" class="acb-mic-hint" hidden><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:mic.status.unavailable" /></p>
 
-        <fieldset class="acb-options">
+        <fieldset class="acb-options" aria-describedby="acb-options-hint">
             <legend class="acb-options__legend"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.legend" /></legend>
             <div class="acb-options__row">
                 <input type="radio" id="acb-gender-neutral" name="acb-gender-style" value="neutral" />
@@ -117,7 +117,7 @@
                 <input type="radio" id="acb-gender-asterisk" name="acb-gender-style" value="asterisk" />
                 <label for="acb-gender-asterisk"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.asterisk" /></label>
             </div>
-            <p class="acb-options__hint"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.hint" /></p>
+            <p id="acb-options-hint" class="acb-options__hint"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:option.genderstyle.hint" /></p>
         </fieldset>
 
         <div class="acb-actions">
@@ -129,8 +129,8 @@
 
             <div id="acb-reset-confirm" class="acb-confirm" role="group" aria-labelledby="acb-reset-question" hidden>
                 <p id="acb-reset-question" class="acb-confirm__question"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.newconversation.question" /></p>
-                <button type="button" id="acb-reset-yes" class="acb-confirm__button" aria-describedby="acb-reset-question"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.newconversation.confirm" /></button>
-                <button type="button" id="acb-reset-no" class="acb-confirm__button" aria-describedby="acb-reset-question"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.newconversation.cancel" /></button>
+                <button type="button" id="acb-reset-yes" class="acb-confirm__button"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.newconversation.confirm" /></button>
+                <button type="button" id="acb-reset-no" class="acb-confirm__button"><f:translate key="LLL:EXT:accessible_chatbot/Resources/Private/Language/locallang.xlf:widget.newconversation.cancel" /></button>
             </div>
         </div>
     </div>

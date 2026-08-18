@@ -15,6 +15,8 @@
  *   #565656 auf #ffffff =  7.3:1  Rahmen von Eingabefeld und Buttons (>= 3:1)
  *   #767676 auf #ffffff =  4.5:1  duenne Trennlinien und Nachrichtenrahmen
  *   #1b1b1b auf #ffffff = 17.2:1  Fokusindikator gegen den weissen Fokusring
+ *   #1b1b1b auf #ffffff = 17.2:1  Ausloese-Knopf-Ring gegen eine helle fremde Seite (>= 3:1)
+ *   #ffffff auf #1b1b1b = 17.2:1  Ausloese-Knopf-Ring gegen eine dunkle fremde Seite (>= 3:1)
  *   #1b1b1b auf #fdf3e7 = 15.7:1  Text in Hinweiszeilen
  *   #8a4b00 auf #ffffff =  6.8:1  Rahmen der Hinweiszeilen (>= 3:1)
  *   #005a9c auf #fdf3e7 =  6.5:1  Kontaktseiten-Link in Hinweiszeilen
@@ -23,6 +25,36 @@
  *   #ffffff auf #8a2e00 =  8.5:1  Sende-Knopf im Abbruch-Zustand
  *   #ffffff auf #6b2400 = 11.19:1  Sende-Knopf im Abbruch-Zustand, Hover
  *   #005a9c auf #ffffff =  7.1:1  Kontaktlink und Knoepfe im Aktionsbereich
+ *   #565656 auf #e3edf7 =  6.2:1  Rahmen des Vorlese-Knopfs, Hover (>= 3:1)
+ *
+ * Die Werte oben und alle Kontrastangaben weiter unten in dieser Datei
+ * gelten fuer das HELLE Schema. Fuer das dunkle Schema (Konzept 8.5,
+ * "prefers-color-scheme") gelten diese Werte:
+ *   #e6e6e6 auf #1b1b1b = 13.8:1  Standardtext, Eingabefeld, Auswahlknoepfe
+ *   #e6e6e6 auf #2a2a2a = 11.5:1  Text in Bot-Nachrichten, Statuszeile
+ *   #e6e6e6 auf #23303d = 10.8:1  Text in eigenen Nachrichten, Hinweiszeilen
+ *   #e6e6e6 auf #33261a = 11.7:1  Text in Stoerungs-Hinweiszeilen
+ *   #1b1b1b auf #7cc0f5 =  8.8:1  Text auf Kopfzeile, Ausloese-/Sende-/Navigationsknopf
+ *   #1b1b1b auf #a6d5ff = 11.1:1  dieselben Knoepfe im Hover-Zustand
+ *   #1b1b1b auf #ef8f6a =  7.2:1  Sende-Knopf im Abbruch-Zustand
+ *   #1b1b1b auf #f7b096 =  9.5:1  Abbruch-Zustand, Hover
+ *   #7cc0f5 auf #1b1b1b =  8.8:1  Links und Rahmen auf der Grundflaeche (>= 3:1)
+ *   #7cc0f5 auf #2a2a2a =  7.3:1  Link im Hinweistext und in Bot-Nachrichten
+ *   #7cc0f5 auf #23303d =  6.9:1  Rahmen und Links der Ankunfts-/Hinweiszeile
+ *   #7cc0f5 auf #33261a =  7.5:1  Kontaktseiten-Link in Hinweiszeilen
+ *   #8a8a8a auf #1b1b1b =  5.0:1  Rahmen von Dialog, Eingabefeld, Knoepfen (>= 3:1)
+ *   #8a8a8a auf #ffffff =  3.5:1  Dialograhmen gegen eine helle fremde Seite (>= 3:1)
+ *   #808080 auf #1b1b1b =  4.4:1  Trennlinien und Nachrichtenrahmen (>= 3:1)
+ *   #808080 auf #2a2a2a =  3.6:1  Rahmen um eine Bot-Nachricht (>= 3:1)
+ *   #808080 auf #23303d =  3.4:1  Rahmen um eine eigene Nachricht (>= 3:1)
+ *   #808080 auf #33261a =  3.7:1  Rahmen um eine Hinweiszeile (>= 3:1)
+ *   #d9a05a auf #1b1b1b =  7.5:1  Rahmen der Stoerungs-Hinweiszeile (>= 3:1)
+ *   #d9a05a auf #33261a =  6.4:1  derselbe Rahmen gegen seine eigene Flaeche (>= 3:1)
+ *   #1b1b1b auf #7cc0f5 =  8.8:1  Flaeche des Schliessen-Knopfs gegen die Kopfzeile (>= 3:1)
+ *   #8a8a8a auf #23303d =  3.9:1  Rahmen des Vorlese-Knopfs, Hover (>= 3:1)
+ *
+ * Der Fokusindikator wird in KEINEM Schema umgefaerbt - siehe Begruendung
+ * beim Abschnitt "Fokusindikator" weiter unten.
  *
  * Alle Groessen in rem, damit die Browser-Schriftgroesse und Zoom greifen.
  */
@@ -30,6 +62,48 @@
 /* ---------- Grundgeruest ---------- */
 
 .acb-widget {
+    /*
+     * Farbmarken ("CSS Custom Properties"). Jede Farbe der Datei steht genau
+     * einmal hier und wird unten nur noch ueber var(...) gelesen. Das dunkle
+     * Schema weiter unten aendert AUSSCHLIESSLICH diese Werte und wiederholt
+     * keinen einzigen Selektor - dadurch kann die Spezifitaetsfalle aus
+     * Konzept 0.3.2 (".acb-widget button" 0-1-1 schlaegt ".acb-send" 0-1-0)
+     * dort gar nicht erneut zuschlagen.
+     *
+     * Bewusst hier auf .acb-widget deklariert und NICHT auf :root - so
+     * gehoert der Namensraum uns allein, fremdes Site-CSS auf :root kann
+     * nicht hereinwirken (naeherer Vorfahre gewinnt bei Vererbung) und
+     * unsere Werte wirken nicht in die Gastseite hinaus (Vererbung geht nur
+     * nach unten, und im Widget liegt kein fremder Inhalt).
+     */
+    --acb-text: #1b1b1b;
+    --acb-surface: #ffffff;
+    --acb-surface-muted: #f0f0f0;
+    --acb-surface-accent: #e3edf7;
+    --acb-surface-warning: #fdf3e7;
+    --acb-accent: #005a9c;
+    --acb-accent-hover: #00426f;
+    --acb-on-accent: #ffffff;
+    --acb-border-strong: #565656;
+    --acb-border-subtle: #767676;
+    --acb-border-warning: #8a4b00;
+    --acb-danger: #8a2e00;
+    --acb-danger-hover: #6b2400;
+    --acb-shadow: rgba(0, 0, 0, 0.35);
+
+    /*
+     * Ohne diese Zeile wuerde eine Gastseite mit "color-scheme: dark" auf
+     * :root (bei ansonsten hellem Betriebssystem/Browser-Schema) dem Browser
+     * vorschreiben, auch unsere hell eingefaerbten, aber selbst nicht
+     * ausdruecklich gesetzten Teile - Bildlaufleisten, Schreibmarke,
+     * Auswahlmarkierung, die noch nicht ausgewaehlten Radios der Sprachform -
+     * dunkel zu zeichnen, obwohl das Widget hier im hellen Schema steht. Der
+     * dunkle Zweig weiter unten in dieser Datei setzt "color-scheme: dark"
+     * bereits selbst; dieser Wert hier gilt nur, solange jener Zweig nicht
+     * greift.
+     */
+    color-scheme: light;
+
     position: fixed;
     right: 1rem;
     bottom: 1rem;
@@ -42,7 +116,7 @@
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-size: 1rem;
     line-height: 1.5;
-    color: #1b1b1b;
+    color: var(--acb-text);
     text-align: left;
 }
 
@@ -97,7 +171,7 @@
  */
 .acb-widget a.acb-msg__link,
 .acb-widget a.acb-intro__link {
-    color: #005a9c;
+    color: var(--acb-accent);
 }
 
 /* Die Icons sind Inline-SVG und nehmen ihre Farbe aus currentColor. Eine
@@ -155,14 +229,37 @@
     min-height: 2.75rem;
     padding: 0.5rem 1rem;
     border-radius: 1.75rem;
-    background-color: #005a9c;
-    color: #ffffff;
+    background-color: var(--acb-accent);
+    color: var(--acb-on-accent);
     font-weight: 600;
-    box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.35);
+    /*
+     * Der Ausloese-Knopf sitzt (neben .acb-dialog) als einziges Element
+     * direkt auf der fremden Gastseite - ohne eigene Umrandung wuerde er auf
+     * einem unguenstigen Seitenhintergrund untergehen (Konzept 8.5: dunkles
+     * Schema auf heller Gastseite = #7cc0f5 auf #ffffff ~1.96:1; helles
+     * Schema auf dunkler Gastseite = #005a9c auf #1b1b1b ~2.41:1 - beides
+     * unter den geforderten 3:1 fuer Bedienelemente).
+     *
+     * Deshalb derselbe schemaunabhaengige Doppelring wie beim Fokusindikator
+     * weiter unten in der Datei: die beiden Farben #ffffff und #1b1b1b sind
+     * BEWUSST hartkodiert und duerfen NICHT zu Farbmarken werden - dieselbe
+     * Begruendung wie beim Fokusring: die beiden Haelften liegen 17.2:1
+     * auseinander, kein Seitenhintergrund kann beide gleichzeitig verschlucken.
+     * Kontrastwerte: siehe Tabelle im Dateikopf.
+     *
+     * Im erzwungenen Kontrastmodus ("forced-colors: active") wird
+     * "box-shadow" vom Betriebssystem UNTERDRUECKT - dieser Ring verschwindet
+     * dort also vollstaendig. Die Umrandung des Knopfs kommt in diesem Modus
+     * ausschliesslich aus der Regel "border ... ButtonText" im
+     * forced-colors-Block weiter unten in dieser Datei. Wird ".acb-toggle"
+     * dort einmal aus der Liste entfernt, bleibt der Ausloese-Knopf im
+     * Kontrastmodus lautlos ohne jede Umrandung.
+     */
+    box-shadow: 0 0 0 0.125rem #ffffff, 0 0 0 0.25rem #1b1b1b, 0 0.125rem 0.5rem var(--acb-shadow);
 }
 
 .acb-widget .acb-toggle:hover {
-    background-color: #00426f;
+    background-color: var(--acb-accent-hover);
 }
 
 .acb-widget .acb-toggle__icon {
@@ -181,10 +278,10 @@
     max-height: calc(100dvh - 8rem);
     overflow-y: auto;
     overscroll-behavior: contain;
-    border: 0.0625rem solid #565656;
+    border: 0.0625rem solid var(--acb-border-strong);
     border-radius: 0.5rem;
-    background-color: #ffffff;
-    box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.35);
+    background-color: var(--acb-surface);
+    box-shadow: 0 0.25rem 1rem var(--acb-shadow);
 }
 
 .acb-dialog[hidden] {
@@ -198,8 +295,8 @@
     gap: 0.5rem;
     flex: none;
     padding: 0.5rem 0.5rem 0.5rem 1rem;
-    background-color: #005a9c;
-    color: #ffffff;
+    background-color: var(--acb-accent);
+    color: var(--acb-on-accent);
 }
 
 .acb-dialog__title {
@@ -216,11 +313,11 @@
     width: 2.75rem;
     height: 2.75rem;
     border-radius: 0.25rem;
-    background-color: #ffffff;
+    background-color: var(--acb-surface);
     /* Ausdruecklich gesetzt: die Kopfzeile (.acb-dialog__header) vererbt
        Weiss, die eigene Flaeche des Knopfs ist aber hell - ohne diesen Wert
        waere ein spaeteres Inline-SVG-Symbol weiss auf weiss. */
-    color: #1b1b1b;
+    color: var(--acb-text);
 }
 
 /* ---------- Transparenzhinweis ---------- */
@@ -229,12 +326,23 @@
     flex: none;
     margin: 0;
     padding: 0.75rem 1rem;
-    border-bottom: 0.0625rem solid #767676;
-    background-color: #f0f0f0;
+    border-bottom: 0.0625rem solid var(--acb-border-subtle);
+    background-color: var(--acb-surface-muted);
 }
 
+/*
+ * "color" steht hier BEWUSST nicht mehr: die Regel hatte Spezifitaet 0-1-0
+ * und wurde ohnehin lautlos von ".acb-widget a.acb-intro__link" (0-2-1,
+ * siehe weiter oben in dieser Datei) geschlagen - eine tote Deklaration, die
+ * den tatsaechlich wirksamen Wert nur verschleierte.
+ *
+ * Zielgroesse (WCAG 2.2, SC 2.5.8): Inline-Links haben zwar eine Ausnahme
+ * von der 24-px-Mindestgroesse, CONCEPT 8.5 verlangt sie hier trotzdem
+ * unbedingt - deshalb display:inline-block und Innenabstand.
+ */
 .acb-intro__link {
-    color: #005a9c;
+    display: inline-block;
+    padding-block: 0.25rem;
     text-decoration: underline;
 }
 
@@ -242,7 +350,15 @@
 
 .acb-log {
     flex: 1 1 auto;
-    min-height: 3rem;
+    /*
+     * 0 statt vormals 3rem (siehe C8-Fix bei ".acb-dialog" im Abschnitt
+     * "Schmale Viewports / 200 % Zoom"): eine feste Mindesthoehe wuerde bei
+     * 400-%-Zoom den bereits knappen Platz zusaetzlich verbrauchen und den
+     * Vorteil von "max(...)" auf dem Dialog wieder zunichtemachen. flex:
+     * 1 1 auto sorgt weiterhin dafuer, dass der Verlauf so viel Platz nimmt,
+     * wie im Dialog uebrig bleibt - nur eben ohne erzwungene Untergrenze.
+     */
+    min-height: 0;
     overflow-y: auto;
     padding: 1rem 1rem;
 }
@@ -259,24 +375,24 @@
 .acb-msg {
     max-width: 100%;
     padding: 0.5rem 0.75rem;
-    border: 0.0625rem solid #767676;
+    border: 0.0625rem solid var(--acb-border-subtle);
     border-radius: 0.5rem;
     overflow-wrap: anywhere;
 }
 
 .acb-msg--bot {
     align-self: flex-start;
-    background-color: #f0f0f0;
+    background-color: var(--acb-surface-muted);
 }
 
 .acb-msg--user {
     align-self: flex-end;
-    background-color: #e3edf7;
+    background-color: var(--acb-surface-accent);
 }
 
 .acb-msg--status {
     align-self: flex-start;
-    background-color: #ffffff;
+    background-color: var(--acb-surface);
     border-style: dashed;
     font-style: italic;
 }
@@ -289,9 +405,9 @@
  */
 .acb-msg--system {
     align-self: stretch;
-    background-color: #fdf3e7;
+    background-color: var(--acb-surface-warning);
     border-width: 0.125rem;
-    border-color: #8a4b00;
+    border-color: var(--acb-border-warning);
 }
 
 /*
@@ -306,11 +422,23 @@
     box-shadow: 0 0 0 0.4375rem #ffffff;
 }
 
-/* Kontaktseiten-Link in einer Hinweiszeile.
-   Kontrast #005a9c auf #fdf3e7 = 6.5:1 - der Link ist zusaetzlich
-   unterstrichen, haengt also nicht allein an der Farbe. */
+/*
+ * Kontaktseiten-Link in einer Hinweiszeile.
+ * Kontrast #005a9c auf #fdf3e7 = 6.5:1 - der Link ist zusaetzlich
+ * unterstrichen, haengt also nicht allein an der Farbe.
+ *
+ * "color" steht hier BEWUSST nicht mehr: die Regel hatte Spezifitaet 0-1-0
+ * und wurde ohnehin lautlos von ".acb-widget a.acb-msg__link" (0-2-1, siehe
+ * weiter oben in dieser Datei) geschlagen.
+ *
+ * Zielgroesse (WCAG 2.2, SC 2.5.8): auch dieser Link bekommt jetzt
+ * Innenabstand - fuer die Variante INNERHALB der Quellenliste (siehe
+ * ".acb-msg__source-list .acb-msg__link" unten) ist das eine harmlose
+ * Wiederholung derselben Werte, keine Verdopplung des Effekts.
+ */
 .acb-msg__link {
-    color: #005a9c;
+    display: inline-block;
+    padding-block: 0.25rem;
     text-decoration: underline;
 }
 
@@ -323,7 +451,7 @@
 .acb-msg__sources {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
-    border-top: 0.0625rem solid #767676;
+    border-top: 0.0625rem solid var(--acb-border-subtle);
 }
 
 .acb-msg__sources-intro {
@@ -363,7 +491,7 @@
 .acb-msg__actions {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
-    border-top: 0.0625rem solid #767676;
+    border-top: 0.0625rem solid var(--acb-border-subtle);
 }
 
 .acb-msg__actions-intro {
@@ -398,13 +526,13 @@
  * auch ohne Farbwahrnehmung als Link erkennbar bleibt.
  */
 .acb-widget a.acb-navigate {
-    background-color: #005a9c;
-    color: #ffffff;
+    background-color: var(--acb-accent);
+    color: var(--acb-on-accent);
     text-decoration: underline;
 }
 
 .acb-widget a.acb-navigate:hover {
-    background-color: #00426f;
+    background-color: var(--acb-accent-hover);
 }
 
 .acb-msg__choices {
@@ -426,14 +554,14 @@
 .acb-widget .acb-choice,
 .acb-widget .acb-starter,
 .acb-widget .acb-confirm__button {
-    background-color: #ffffff;
-    border: 0.125rem solid #005a9c;
+    background-color: var(--acb-surface);
+    border: 0.125rem solid var(--acb-accent);
 }
 
 .acb-widget .acb-choice:hover,
 .acb-widget .acb-starter:hover,
 .acb-widget .acb-confirm__button:hover {
-    background-color: #e3edf7;
+    background-color: var(--acb-surface-accent);
 }
 
 /*
@@ -447,9 +575,9 @@
 .acb-msg--arrival,
 .acb-msg--note {
     align-self: stretch;
-    background-color: #e3edf7;
+    background-color: var(--acb-surface-accent);
     border-width: 0.125rem;
-    border-color: #005a9c;
+    border-color: var(--acb-accent);
 }
 
 /* ---------- Vorlesen ---------- */
@@ -457,7 +585,7 @@
 .acb-msg__tools {
     margin-top: 0.5rem;
     padding-top: 0.5rem;
-    border-top: 0.0625rem solid #767676;
+    border-top: 0.0625rem solid var(--acb-border-subtle);
 }
 
 /*
@@ -473,13 +601,29 @@
     min-width: 1.5rem;
     min-height: 1.5rem;
     padding: 0.25rem 0.5rem;
-    border: 0.0625rem solid #565656;
+    border: 0.0625rem solid var(--acb-border-strong);
     border-radius: 0.25rem;
     font-size: 0.875rem;
 }
 
 .acb-widget .acb-speak:hover {
-    background-color: #f0f0f0;
+    /* var(--acb-surface-muted) waere hier UNSICHTBAR: der Knopf sitzt immer
+       in einer Bot-Nachricht (.acb-msg--bot), die genau diese Flaeche als
+       eigenen Hintergrund hat - der Hover haette dann keinerlei Wirkung. */
+    background-color: var(--acb-surface-accent);
+    /*
+     * Reine Flaechenaenderung allein ist gegen die eigene Umgebung nur ein
+     * Kontrastverhaeltnis von rund 1.04:1 - kaum wahrnehmbar. Deshalb hier,
+     * wie im Rest der Datei bei Zustandsaenderungen ueblich (siehe
+     * ".acb-speak[data-acb-speaking]" direkt darunter, ".acb-mic[aria-pressed]"),
+     * zusaetzlich eine staerkere Rahmenlinie. Keine Padding-Kompensation
+     * noetig: alle Elemente im Widget stehen unter box-sizing: border-box
+     * (siehe Grundregel oben in dieser Datei) - eine groessere Randbreite
+     * verkleinert dadurch nur die Innenflaeche desselben Knopfs, die
+     * min-width/min-height-Aussenmasse und damit das umgebende Layout
+     * bleiben unveraendert.
+     */
+    border-width: 0.1875rem;
 }
 
 /*
@@ -497,12 +641,29 @@
     flex: none;
     margin: 0;
     padding: 0 1rem;
+    /*
+     * Reservierte Hoehe statt des vorherigen Zusammenfallens auf 0: leert
+     * sich .acb-status und wird danach mit dem langen Text "status.typing"
+     * gefuellt, waechst die Zeile sonst um ~60-80 px und schiebt Eingabefeld,
+     * Mikrofon und Sende-Knopf nach unten - genau in dem Moment, in dem
+     * Zeiger oder Dwell-Ziel noch auf dem Knopf stehen, der sich gerade von
+     * "Senden" zu "Abbrechen" umbenannt hat (COGA 4.5.1). Betroffen sind vor
+     * allem motorisch eingeschraenkte Zeiger- und Dwell-Klick-Nutzende.
+     *
+     * Berechneter Wert: 3 Zeilen zu je 1.5rem Zeilenhoehe (Grundschrift
+     * 1rem/1.5, siehe .acb-widget) + 1rem senkrechtes Polster + 0.0625rem
+     * obere Rahmenlinie im befuellten Zustand (siehe
+     * ".acb-status:not(:empty)" direkt darunter) = 5.5625rem. Der leere
+     * Zustand traegt selbst kein senkrechtes Polster - die reservierte Hoehe
+     * gleicht das aus, damit der befuellte Zustand nicht mehr waechst.
+     */
+    min-height: 5.5625rem;
 }
 
 .acb-status:not(:empty) {
     padding: 0.5rem 1rem;
-    border-top: 0.0625rem solid #767676;
-    background-color: #f0f0f0;
+    border-top: 0.0625rem solid var(--acb-border-subtle);
+    background-color: var(--acb-surface-muted);
 }
 
 /* ---------- Formular ---------- */
@@ -514,7 +675,7 @@
     gap: 0.5rem;
     flex: none;
     padding: 0.75rem 1rem;
-    border-top: 0.0625rem solid #767676;
+    border-top: 0.0625rem solid var(--acb-border-subtle);
 }
 
 .acb-form__field {
@@ -532,10 +693,10 @@
     width: 100%;
     min-height: 2.75rem;
     padding: 0.375rem 0.5rem;
-    border: 0.125rem solid #565656;
+    border: 0.125rem solid var(--acb-border-strong);
     border-radius: 0.25rem;
-    background-color: #ffffff;
-    color: #1b1b1b;
+    background-color: var(--acb-surface);
+    color: var(--acb-text);
     font: inherit;
 }
 
@@ -546,9 +707,9 @@
     flex: none;
     width: 2.75rem;
     height: 2.75rem;
-    border: 0.125rem solid #565656;
+    border: 0.125rem solid var(--acb-border-strong);
     border-radius: 0.25rem;
-    background-color: #ffffff;
+    background-color: var(--acb-surface);
 }
 
 .acb-mic[hidden] {
@@ -559,20 +720,20 @@
    UND der Textmeldung in .acb-status - niemals nur an der Farbe. */
 .acb-mic[aria-pressed="true"] {
     border-width: 0.25rem;
-    background-color: #e3edf7;
+    background-color: var(--acb-surface-accent);
 }
 
 .acb-widget .acb-send {
     min-height: 2.75rem;
     padding: 0.5rem 1rem;
     border-radius: 0.25rem;
-    background-color: #005a9c;
-    color: #ffffff;
+    background-color: var(--acb-accent);
+    color: var(--acb-on-accent);
     font-weight: 600;
 }
 
 .acb-widget .acb-send:hover {
-    background-color: #00426f;
+    background-color: var(--acb-accent-hover);
 }
 
 /*
@@ -583,11 +744,11 @@
  * Kontrast #ffffff auf #8a2e00 = 8.5:1.
  */
 .acb-send[data-acb-mode="cancel"] {
-    background-color: #8a2e00;
+    background-color: var(--acb-danger);
 }
 
 .acb-send[data-acb-mode="cancel"]:hover {
-    background-color: #6b2400;
+    background-color: var(--acb-danger-hover);
 }
 
 .acb-mic-hint {
@@ -608,7 +769,7 @@
     margin: 0;
     padding: 0.75rem 1rem;
     border: 0;
-    border-top: 0.0625rem solid #767676;
+    border-top: 0.0625rem solid var(--acb-border-subtle);
 }
 
 .acb-options__legend {
@@ -628,7 +789,7 @@
     width: 1.5rem;
     height: 1.5rem;
     margin: 0;
-    accent-color: #005a9c;
+    accent-color: var(--acb-accent);
 }
 
 .acb-options__row label {
@@ -653,7 +814,7 @@
     gap: 0.5rem;
     flex: none;
     padding: 0.75rem 1rem;
-    border-top: 0.0625rem solid #767676;
+    border-top: 0.0625rem solid var(--acb-border-subtle);
 }
 
 /*
@@ -666,7 +827,7 @@
     align-items: center;
     min-height: 2.75rem;
     padding: 0.5rem 0.75rem;
-    color: #005a9c;
+    color: var(--acb-accent);
     text-decoration: underline;
 }
 
@@ -680,12 +841,12 @@
     justify-content: center;
     min-height: 2.75rem;
     padding: 0.5rem 1rem;
-    border: 0.125rem solid #565656;
+    border: 0.125rem solid var(--acb-border-strong);
     border-radius: 0.25rem;
 }
 
 .acb-widget .acb-reset:hover {
-    background-color: #f0f0f0;
+    background-color: var(--acb-surface-muted);
 }
 
 /*
@@ -701,9 +862,9 @@
     gap: 0.5rem;
     flex-basis: 100%;
     padding: 0.75rem;
-    border: 0.125rem solid #8a4b00;
+    border: 0.125rem solid var(--acb-border-warning);
     border-radius: 0.25rem;
-    background-color: #fdf3e7;
+    background-color: var(--acb-surface-warning);
 }
 
 .acb-confirm[hidden] {
@@ -721,6 +882,14 @@
  * Dadurch bleibt der Fokus auf JEDEM Seitenhintergrund sichtbar - das Widget
  * schwebt ueber fremdem Inhalt, dessen Farbe wir nicht kennen.
  * Standard-Outlines werden nirgends entfernt.
+ *
+ * Die beiden Farben dieses Rings sind BEWUSST nicht als Farbmarke gefuehrt
+ * und aendern sich im dunklen Schema NICHT: Der Ring traegt seinen eigenen
+ * hellen und seinen eigenen dunklen Anteil, die 17.2:1 auseinanderliegen.
+ * Es gibt keine Hintergrundhelligkeit, bei der beide Anteile gleichzeitig
+ * unter 3:1 fallen - der Ring ist damit auf jedem Seitenhintergrund und in
+ * jedem Farbschema sichtbar. Wer ihn im dunklen Schema "mitdreht", zerstoert
+ * genau diese Eigenschaft (Konzept 8.4).
  */
 .acb-widget :focus-visible {
     outline: 0.1875rem solid #1b1b1b;
@@ -771,6 +940,25 @@
     }
 }
 
+/*
+ * Das JavaScript setzt bei mehreren Gelegenheiten programmatisch den Fokus
+ * (z. B. auf eine per Pfeiltaste angesprungene Nachricht in .acb-log, siehe
+ * chatbot.js). .focus() bekommt dabei absichtlich KEIN
+ * "{ preventScroll: true }" mit, weil genau diese beiden scrollbaren Boxen
+ * (.acb-log und .acb-dialog, beide mit overflow-y: auto) ja deswegen
+ * scrollen sollen. "scroll-behavior" wird NICHT vererbt - eine Regel der
+ * GASTSEITE wie z. B. "* { scroll-behavior: smooth }" (ausserhalb unserer
+ * Kontrolle) muss deshalb hier an genau diesen beiden Elementen
+ * uebersteuert werden, nicht an .acb-widget selbst. Sonst animiert ein
+ * fokus-ausgeloester Bildlauf auch bei eingestellter reduzierter Bewegung.
+ */
+@media (prefers-reduced-motion: reduce) {
+    .acb-log,
+    .acb-dialog {
+        scroll-behavior: auto;
+    }
+}
+
 @keyframes acb-fade-in {
     from {
         opacity: 0;
@@ -796,7 +984,19 @@
 
     .acb-dialog {
         width: auto;
-        max-height: calc(100dvh - 7rem);
+        /*
+         * max() statt der reinen calc(): bei 400 % Zoom auf einem
+         * 1280x800-Bildschirm betraegt der CSS-Viewport nur noch 320x200 px
+         * - "calc(100dvh - 7rem)" liesse dann gerade einmal 88 px fuer den
+         * gesamten Dialog uebrig, weniger als Kopfzeile (44 px) plus die
+         * Mindesthoehe des Verlaufs (.acb-log, 48 px) zusammen brauchen.
+         * Einachsiges Scrollen erfuellt WCAG 1.4.10 zwar formal, macht den
+         * Dialog aber fuer genau die Personen mit Sehbehinderung unbrauchbar,
+         * fuer die 400-%-Zoom ueberhaupt existiert. 12rem ist die
+         * Mindesthoehe, unter die der Dialog nie faellt - bei ausreichend
+         * Bildschirmhoehe bleibt calc(100dvh - 7rem) weiterhin massgeblich.
+         */
+        max-height: max(calc(100dvh - 7rem), 12rem);
     }
 
     .acb-toggle {
@@ -804,15 +1004,87 @@
     }
 }
 
+/* ---------- Systemfarbschema: dunkle Darstellung ---------- */
+
+/*
+ * Konzept 8.5: Das Widget respektiert eine eingestellte dunkle Darstellung.
+ * Fuer Menschen mit Migraene, Photophobie und manchen Sehbeeintraechtigungen
+ * ist eine helle Flaeche auf dunkler Seite eine echte Belastung.
+ *
+ * Umgesetzt AUSSCHLIESSLICH ueber die Farbmarken aus .acb-widget. Hier wird
+ * kein einziger Komponenten- oder Knopf-Selektor der Datei wiederholt -
+ * deshalb kann die Spezifitaetsfalle aus Konzept 0.3.2 hier gar nicht erneut
+ * zuschlagen. Wiederholt wird ausschliesslich .acb-widget selbst (0-1-0),
+ * und der traegt an dieser Stelle keine einzige Layout- oder Farbangabe -
+ * nur die neuen Werte der Farbmarken.
+ *
+ * KEIN reines Schwarz als Flaeche und kein reines Weiss als Text: auf reinem
+ * Schwarz "blutet" heller Text fuer viele Menschen mit Astigmatismus sichtbar
+ * aus (Halation, Nachbilder). Deshalb #1b1b1b und #e6e6e6.
+ *
+ * Dieser Block steht vor dem erzwungenen Kontrastmodus - zwischen beiden
+ * besteht dabei KEIN Wettbewerb um die Reihenfolge: beide Medienabfragen
+ * koennen zwar gleichzeitig zutreffen (ein dunkles Windows-Kontrastdesign
+ * meldet auch "prefers-color-scheme: dark"), sie setzen aber disjunkte
+ * Eigenschaften - dieser Block ausschliesslich die Farbmarken, der
+ * Kontrastmodus ausschliesslich Rahmenbreiten. Dass der Kontrastmodus in
+ * jedem Fall das letzte Wort bei den Flaechenfarben behaelt, erzwingt allein
+ * das Betriebssystem selbst (es ersetzt Farben unabhaengig von der
+ * Quellreihenfolge im Stylesheet) - nicht die Position dieses Blocks.
+ *
+ * Kontrastwerte: siehe Tabelle im Dateikopf.
+ */
+@media (prefers-color-scheme: dark) {
+    .acb-widget {
+        /*
+         * Meldet dem Browser, dass er auch die Teile dunkel zeichnen soll,
+         * die er selbst rendert und die wir gar nicht ansprechen koennen:
+         * die Bildlaufleisten in .acb-dialog und .acb-log, Schreibmarke,
+         * Auswahlmarkierung und Autofill im Eingabefeld sowie die noch nicht
+         * ausgewaehlten Radios der Sprachform. Ohne diese Zeile blieben genau
+         * diese Teile hell und stechen aus der dunklen Flaeche heraus.
+         *
+         * Bewusst nur hier im dunklen Zweig gesetzt: im hellen Schema erbt das
+         * Widget, was die Gastseite eingestellt hat.
+         */
+        color-scheme: dark;
+
+        --acb-text: #e6e6e6;
+        --acb-surface: #1b1b1b;
+        --acb-surface-muted: #2a2a2a;
+        --acb-surface-accent: #23303d;
+        --acb-surface-warning: #33261a;
+        --acb-accent: #7cc0f5;
+        --acb-accent-hover: #a6d5ff;
+        --acb-on-accent: #1b1b1b;
+        --acb-border-strong: #8a8a8a;
+        --acb-border-subtle: #808080;
+        --acb-border-warning: #d9a05a;
+        --acb-danger: #ef8f6a;
+        --acb-danger-hover: #f7b096;
+        --acb-shadow: rgba(0, 0, 0, 0.6);
+    }
+}
+
 /* ---------- Erzwungener Kontrastmodus (z. B. Windows) ---------- */
 
 /*
- * Die Icons sind Inline-SVG mit fill: currentColor. Der erzwungene
- * Kontrastmodus ersetzt "color" durch eine Systemfarbe (in Knoepfen:
- * ButtonText) - die Icons faerben sich dadurch von selbst korrekt mit.
- * "fill" wird vom Modus NICHT ersetzt, deshalb ist currentColor hier der
- * entscheidende Trick und kein Zufall. Als <img> eingebundene Bilddateien
- * konnten das nicht, das war der Grund fuer die Umstellung.
+ * Die Icons sind Inline-SVG mit fill: currentColor. MDN und die Spezifikation
+ * CSS Color Adjustment L1 fuehren "fill" und "stroke" ausdruecklich unter den
+ * Eigenschaften, die der erzwungene Kontrastmodus SELBST ersetzt - die
+ * fruehere Begruendung dieses Kommentars war an dieser Stelle falsch. Der
+ * eigentliche Grund, warum currentColor hier trotzdem der entscheidende
+ * Trick ist: der Modus ersetzt "color" (in Knoepfen durch ButtonText), und
+ * currentColor bindet "fill" an genau diesen Wert - dieselbe Vererbung sorgt
+ * auch im DUNKLEN Schema dafuer, dass die Icons automatisch mitfaerben, ohne
+ * dass irgendwo extra fill-Werte gepflegt werden muessen. Als <img>
+ * eingebundene Bilddateien konnten weder das eine noch das andere, das war
+ * der eigentliche Grund fuer die Umstellung auf Inline-SVG.
+ *
+ * ".acb-widget svg { fill: currentColor }" (siehe weiter oben in dieser
+ * Datei) bleibt trotzdem noetig - unabhaengig vom erzwungenen
+ * Kontrastmodus: eine Regel der Gastseite wie "svg { fill: red }" haette
+ * sonst Vorrang vor dem Praesentationsattribut am Element.
  *
  * Die Rahmen unten bleiben trotzdem noetig: sie halten die Knoepfe als
  * Knoepfe erkennbar, wenn der Modus alle Flaechenfarben vereinheitlicht.

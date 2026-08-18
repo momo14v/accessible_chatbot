@@ -32,8 +32,8 @@
                 <target>Gesprächsverlauf</target>
             </trans-unit>
             <trans-unit id="widget.log.hint">
-                <source>Use the arrow keys down and up to move from message to message. Home goes to the first message, End to the last one.</source>
-                <target>Mit den Pfeiltasten nach unten und oben geht es von Nachricht zu Nachricht. Pos 1 springt zur ersten Nachricht, Ende zur letzten.</target>
+                <source>The arrow keys down and up move between messages instead of scrolling. Home goes to the first message, End to the last one.</source>
+                <target>Die Pfeiltasten nach unten und oben bewegen zwischen den Nachrichten, statt zu blättern. Pos 1 springt zur ersten Nachricht, Ende zur letzten.</target>
             </trans-unit>
             <trans-unit id="message.sender.user">
                 <source>You:</source>

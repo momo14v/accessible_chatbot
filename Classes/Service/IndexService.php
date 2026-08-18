@@ -122,7 +122,6 @@ final class IndexService
             );
             $this->insertRows($connection, $rows);
             $connection->commit();
-            $this->flushSitemapCache();
         } catch (\Throwable $exception) {
             $connection->rollBack();
             $this->logger->error('Index rebuild failed for site {site}: {message}', [
@@ -133,7 +132,34 @@ final class IndexService
             throw $exception;
         }
 
+        // BEWUSST ausserhalb von try/catch und NACH dem commit(): scheitert
+        // allein der Zwischenspeicher (z. B. weil "Datenbank analysieren"
+        // nach einem Update noch nicht gelaufen ist und die Tabelle fehlt),
+        // gibt es hier keine offene Transaktion mehr - ein rollBack() in
+        // diesem Fall wuerfe seinerseits NoActiveTransaction, verschluckte
+        // die eigentliche Ursache und liesse den Index-Erfolg als Fehler
+        // erscheinen. Der Index selbst ist zu diesem Zeitpunkt bereits
+        // korrekt geschrieben; ein misslungenes Leeren des Zwischenspeichers
+        // darf das nicht nachtraeglich zu einem Fehlschlag machen.
+        $this->flushSitemapCacheSafely();
+
         return count($rows);
+    }
+
+    /**
+     * Leert den Sitemap-Zwischenspeicher, ohne einen ansonsten erfolgreichen
+     * Reindex fehlschlagen zu lassen (siehe Aufrufstellen in indexSite() und
+     * refresh()).
+     */
+    private function flushSitemapCacheSafely(): void
+    {
+        try {
+            $this->flushSitemapCache();
+        } catch (\Throwable $exception) {
+            $this->logger->warning('Flushing the sitemap cache failed: {message}', [
+                'message' => $exception->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -296,14 +322,24 @@ final class IndexService
         $connection->beginTransaction();
         try {
             if ($unresolvedPageUids !== []) {
+                // Diese Seiten gehoeren zu KEINER Website mehr (geloescht
+                // oder ausserhalb jeder Rootline) - hier ist das
+                // unbeschraenkte Loeschen ueber alle Websites hinweg korrekt:
+                // es gibt keine site_identifier, unter der ein Wiedereinsatz
+                // erfolgen koennte.
                 $this->deleteByPageUids($unresolvedPageUids);
             }
             foreach ($pageUidsBySite as $identifier => $group) {
-                $this->deleteByPageUids($group['pageUids']);
+                // Site-gebunden loeschen: dieselbe Seiten-UID kann ueber
+                // einen Mountpoint (Konzept 0.2/S9, 4.4) unter MEHREREN
+                // Websites einen eigenen Index-Eintrag haben. Ohne die
+                // Einschraenkung auf $identifier wuerde das erneute Einfuegen
+                // fuer die eine Website den Eintrag der ANDEREN Website
+                // ersatzlos loeschen - bis zum naechsten Voll-Reindex.
+                $this->deleteByPageUidsForSite($group['pageUids'], $identifier);
                 $this->insertRows($connection, $builtRows[$identifier]);
             }
             $connection->commit();
-            $this->flushSitemapCache();
         } catch (\Throwable $exception) {
             $connection->rollBack();
             $this->logger->error('Incremental index refresh failed: {message}', [
@@ -312,9 +348,18 @@ final class IndexService
 
             throw $exception;
         }
+
+        // Siehe Begruendung in indexSite(): bewusst ausserhalb von
+        // try/catch und nach dem commit().
+        $this->flushSitemapCacheSafely();
     }
 
     /**
+     * Loescht ueber ALLE Websites hinweg - nur fuer Seiten korrekt, die zu
+     * keiner Website (mehr) gehoeren (siehe $unresolvedPageUids in
+     * refresh()). Fuer Seiten mit bekannter Website siehe
+     * deleteByPageUidsForSite().
+     *
      * @param list<int> $pageUids
      */
     private function deleteByPageUids(array $pageUids): void
@@ -327,6 +372,37 @@ final class IndexService
                     $queryBuilder->expr()->in(
                         'page_uid',
                         $queryBuilder->createNamedParameter($chunk, Connection::PARAM_INT_ARRAY)
+                    )
+                )
+                ->executeStatement();
+        }
+    }
+
+    /**
+     * Loescht auf GENAU eine Website beschraenkt.
+     *
+     * Noetig, weil dieselbe Seiten-UID ueber einen Mountpoint unter mehreren
+     * Websites je einen eigenen Index-Eintrag haben kann (Konzept 0.2/S9,
+     * 4.4). Ein unbeschraenktes Loeschen nach page_uid allein wuerde beim
+     * Wiedereinfuegen fuer EINE Website den Eintrag jeder ANDEREN Website
+     * mitloeschen, ohne ihn zu ersetzen.
+     *
+     * @param list<int> $pageUids
+     */
+    private function deleteByPageUidsForSite(array $pageUids, string $siteIdentifier): void
+    {
+        foreach (array_chunk($pageUids, self::CHUNK_SIZE) as $chunk) {
+            $queryBuilder = $this->connectionPool->getQueryBuilderForTable(self::TABLE);
+            $queryBuilder
+                ->delete(self::TABLE)
+                ->where(
+                    $queryBuilder->expr()->in(
+                        'page_uid',
+                        $queryBuilder->createNamedParameter($chunk, Connection::PARAM_INT_ARRAY)
+                    ),
+                    $queryBuilder->expr()->eq(
+                        'site_identifier',
+                        $queryBuilder->createNamedParameter($siteIdentifier)
                     )
                 )
                 ->executeStatement();

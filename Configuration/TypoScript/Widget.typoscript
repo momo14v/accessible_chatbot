@@ -54,16 +54,45 @@ page.9990 {
         languageUid.data = siteLanguage:languageId
         languageUid.intval = 1
 
-        # Pfad-Anteil der TYPO3-Installation, z. B. "/" oder "/unterverzeichnis/".
-        # Daraus baut das JavaScript die Adresse des Chat-Endpunkts. Damit
-        # funktioniert der Chat auch in einer Installation im Unterverzeichnis.
+        # Basis-Adresse der AKTUELLEN Sprache dieser Website, z. B.
+        # "https://www.example.org/" oder "https://www.example.org/en/".
+        # Das JavaScript entnimmt daraus NUR den Pfad-Anteil
+        # (new URL(...).pathname) und baut damit die Adresse des
+        # Chat-Endpunkts - Schema und Host kommen im Browser immer aus der
+        # aktuell aufgerufenen Seite. Damit bleibt es bei derselben Herkunft,
+        # auch wenn diese Adresse (mit dem HTML) im Seiten-Cache liegt und
+        # spaeter unter einem anderen Hostnamen (mit/ohne www, Staging-Alias)
+        # ausgeliefert wird - der Aufruf scheiterte sonst an CORS oder CSP.
         #
-        # BEWUSST nur der Pfad und keine vollstaendige Adresse: eine absolute
-        # URL wird ins gecachte HTML geschrieben und wuerde bei mehreren
-        # Hostnamen (mit/ohne www, Staging-Alias) auf die falsche Herkunft
-        # zeigen - der Aufruf scheiterte dann an CORS oder CSP.
-        basePath = TEXT
-        basePath.data = getIndpEnv:TYPO3_SITE_PATH
+        # WICHTIG - nicht getIndpEnv:TYPO3_SITE_URL benutzen: der Wert kommt
+        # aus NormalizedParams::determineSiteUrl()/determineSitePath() und
+        # damit aus dem PFAD DER TYPO3-INSTALLATION (dem Skript-Aufrufort),
+        # NICHT aus der Basis der aktuellen Site oder SiteLanguage. Hat jede
+        # Sprache einen eigenen Pfadanteil (z. B. "/en/", "/de/") und liegt
+        # nichts auf "/", loest SiteMatcher die Website zwar auf, aber
+        # "language" bleibt null - SiteBaseRedirectResolver (laeuft VOR
+        # unserer eigenen Middleware) antwortet dann mit 404, bevor unsere
+        # Middleware ueberhaupt erreicht wird. Bei pfadbasiertem Multi-Site-
+        # Betrieb (z. B. "/" und "/shop/") zeigt TYPO3_SITE_URL zudem immer
+        # auf die ERSTE Website - der Endpunkt loeste dann staendig die
+        # falsche Website auf.
+        #
+        # Ebenso NICHT getIndpEnv:TYPO3_SITE_PATH: spaetestens ab TYPO3 14.3
+        # (geprueft in 14.3.4) laeuft der Zweig "getindpenv" in
+        # ContentObjectRenderer::getData() ueber ein match() mit einer
+        # festen, abschliessenden Liste erlaubter Schluessel. TYPO3_SITE_PATH
+        # steht NICHT mehr in dieser Liste (default => null) und liefert dort
+        # still eine leere Zeichenkette. In 13.4.33 loest es noch auf; ein
+        # Changelog-Eintrag zur TypoScript-Seite existiert nicht, der
+        # zugehoerige Core-Change ist Deprecation #109551 (eingeordnet unter
+        # 14.3).
+        #
+        # Stattdessen "sitelanguage": ein eigener match()-Zweig in
+        # ContentObjectRenderer::getData(), der SiteLanguage::toArray()
+        # ausliest - unveraendert vorhanden in 13.4.33 UND 14.3.4 und vom
+        # oben beschriebenen match()-Problem NICHT betroffen.
+        siteUrl = TEXT
+        siteUrl.data = siteLanguage:base
 
         # Fertige Adresse der Kontaktseite. Sie wird ausschliesslich hier auf
         # dem Server erzeugt (TYPO3s Link-Erzeugung) - das JavaScript bastelt
@@ -84,6 +113,13 @@ page.includeJSFooter.accessibleChatbot {
     type = module
     # ES-Module duerfen nicht mit anderen JavaScript-Dateien zusammengefasst
     # oder minimiert werden - beides wuerde das Modul zerstoeren.
+    #
+    # Auf TYPO3 14 sind beide Optionen wirkungslos: Breaking #108055 hat die
+    # Frontend-Zusammenfassung und -Kompression von Assets aus dem Core
+    # entfernt, die Optionen werden dort still ignoriert. Trotzdem hier
+    # BEWUSST stehen lassen und nicht "aufraeumen": auf TYPO3 13 (aktuelle
+    # Zielversion dieser Installation) sind sie weiterhin wirksam und noetig,
+    # ohne sie wuerde das Modul dort zerstoert.
     excludeFromConcatenation = 1
     disableCompression = 1
 }

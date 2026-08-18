@@ -4,7 +4,7 @@ Ein barrierefreier Chatbot für TYPO3, der Fragen ausschließlich aus den sichtb
 
 ## Status
 
-Version 0.7.0 - in Entwicklung (Phase 7 von 9). Das barrierefreie Chat-Widget ist vorhanden und beantwortet Fragen über die Google-Gemini-API. Seit Phase 4 greift der Chat auf den Inhaltsindex zu: Der Bot beantwortet Fragen aus den tatsächlichen, sichtbaren Inhalten dieser Website und nennt zu jeder inhaltlich gestützten Antwort einen oder mehrere Links auf die verwendeten Seiten. Findet er keine passende Seite, sagt er das ehrlich und bietet - falls eingerichtet - die Kontaktseite an. Seit Phase 5 ist der Gesprächsverlauf mit Pfeiltasten durchsuchbar und Ansagen laufen über eine eigene Statuszeile statt über den Verlauf selbst; fehlt die Spracherkennung des Browsers, erscheint ein sichtbarer Hinweis. Seit Phase 6 kann der Assistent zu einer Seite führen. Er bietet dafür einen Knopf innerhalb seiner Antwort an — die Seite wechselt ausschließlich, wenn dieser Knopf betätigt wird. Einen automatischen Seitenwechsel gibt es in keiner Einstellung. Passen mehrere Seiten, stellt der Assistent eine Rückfrage mit Auswahlknöpfen. Seit Phase 7 gibt es vorgeschlagene Einstiegsfragen, einen dauerhaft sichtbaren Weg zu einem Menschen, ein "Neues Gespräch beginnen" mit Rückfrage, eine abbrechbare laufende Anfrage, einen Hinweis, wenn ältere Nachrichten aus dem Kontext fallen, drei statt zwei Sprachformen, eine serverseitige Textsäuberung der KI-Antwort sowie eine optionale Vorlesefunktion.
+Version 0.8.0 - in Entwicklung (Phase 8 von 9 abgeschlossen, offen ist Phase 9). Das barrierefreie Chat-Widget ist vorhanden und beantwortet Fragen über die Google-Gemini-API. Seit Phase 4 greift der Chat auf den Inhaltsindex zu: Der Bot beantwortet Fragen aus den tatsächlichen, sichtbaren Inhalten dieser Website und nennt zu jeder inhaltlich gestützten Antwort einen oder mehrere Links auf die verwendeten Seiten. Findet er keine passende Seite, sagt er das ehrlich und bietet - falls eingerichtet - die Kontaktseite an. Seit Phase 5 ist der Gesprächsverlauf mit Pfeiltasten durchsuchbar und Ansagen laufen über eine eigene Statuszeile statt über den Verlauf selbst; fehlt die Spracherkennung des Browsers, erscheint ein sichtbarer Hinweis. Seit Phase 6 kann der Assistent zu einer Seite führen. Er bietet dafür einen Knopf innerhalb seiner Antwort an — die Seite wechselt ausschließlich, wenn dieser Knopf betätigt wird. Einen automatischen Seitenwechsel gibt es in keiner Einstellung. Passen mehrere Seiten, stellt der Assistent eine Rückfrage mit Auswahlknöpfen. Seit Phase 7 gibt es vorgeschlagene Einstiegsfragen, einen dauerhaft sichtbaren Weg zu einem Menschen, ein "Neues Gespräch beginnen" mit Rückfrage, eine abbrechbare laufende Anfrage, einen Hinweis, wenn ältere Nachrichten aus dem Kontext fallen, drei statt zwei Sprachformen, eine serverseitige Textsäuberung der KI-Antwort sowie eine optionale Vorlesefunktion. Seit Phase 8 folgt das Widget zusätzlich der Betriebssystem-Einstellung für einen Dunkelmodus, alle Farben liegen dafür gesammelt auf einer eigenen Farbmarken-Ebene (siehe Abschnitt „Darstellung, Farben und Kontrast"), und es gibt zwei eigene Barrierefreiheits-Dokumente: [`Documentation/A11y-Checklist.md`](Documentation/A11y-Checklist.md) und [`Documentation/A11y-Selbstbewertung.md`](Documentation/A11y-Selbstbewertung.md).
 
 ## Voraussetzungen
 
@@ -84,6 +84,20 @@ Backend → Web → Template → Root-Seite → "TypoScript Object Browser" → 
 Der Zweig `page.9990` muss vorhanden sein. Fehlt er, ist die Reihenfolge falsch -
 dann Weg B verwenden bzw. die Reihenfolge korrigieren.
 
+### Möglicher Konflikt mit dem eigenen Site-Package
+
+Das Widget wird technisch über den TypoScript-Objektpfad `page.9990`
+eingebunden (ein sogenanntes `cObject`, eine von TYPO3 nummeriert
+verwaltete Ausgabe-Anweisung innerhalb des `page`-Objekts). Nutzt das eigene
+Site-Package diese Nummer `9990` bereits für einen eigenen Zweck, überschreibt
+die später geladene Zuweisung stillschweigend die frühere - eine der beiden
+Ausgaben verschwindet, ohne dass TYPO3 einen Fehler meldet. Bemerkbar macht
+sich das entweder daran, dass der Chatbot trotz korrekter Einbindung nicht
+erscheint, oder daran, dass eine andere, zuvor über `page.9990` ausgegebene
+Website-Funktion plötzlich fehlt. Die Kontrolle erfolgt wie oben beschrieben
+über den TypoScript Object Browser. Im Konfliktfall hilft nur, im eigenen
+Site-Package eine andere, noch nicht belegte Nummer zu verwenden.
+
 ### Warum nicht beides gleichzeitig
 
 TYPO3 wertet Konstanten in Stufen aus. Konstanten aus einem `sys_template`-Datensatz
@@ -132,6 +146,20 @@ zugewiesen werden, auch wenn sonst ausschließlich mit statischem TypoScript
 | `readAloudEnabled` | an | Vorlesefunktion je Antwort anbieten, siehe Abschnitt „Antworten vorlesen lassen". |
 | `maxIndexPagesFullSitemap` | 150 | Ab dieser Anzahl indexierter Seiten bekommt der Assistent nur noch die oberen Ebenen des Seitenbaums (bis Ebene 2) statt der vollständigen Seitenliste |
 
+**Bekannte Größengrenze (kein Fehler, sondern eine Grenze):** Bei jeder
+Chat-Nachricht lädt die Extension zur Sicherheitsprüfung die komplette
+`pages`-Tabelle der TYPO3-Installation (Spalten `uid`, `pid`, `doktype`,
+`fe_group`, `extendToSubpages`, `hidden`, `starttime`, `endtime`) und
+durchsucht den Inhaltsindex mit bis zu 60 `LIKE '%…%'`-Bedingungen, sortiert
+dabei nach Seiten-ID und nicht nach Relevanz. Für die Größenordnung, für die
+das Konzept dieser Extension ausgelegt ist (einige Hundert Seiten), ist das
+unproblematisch. Bei 5.000 bis 20.000 Seiten wird daraus je Nachricht ein
+vollständiger Tabellendurchlauf, und die Trefferqualität sinkt zusätzlich,
+weil bei Erreichen der internen Kandidatengrenze eher zufällig nach
+Seiten-ID statt nach tatsächlicher Relevanz ausgewählt wird. Das ist eine
+bekannte, dokumentierte Grenze dieser Version - kein Fehler und keine
+Zusage, dass eine Behebung geplant ist.
+
 Alle sichtbaren Texte liegen in `Resources/Private/Language/locallang.xlf`
 (englische Quelldatei) und `de.locallang.xlf` (deutsche Übersetzung) und lassen
 sich projektspezifisch über `locallangXMLOverride` überschreiben.
@@ -158,6 +186,131 @@ letzten. Die Tab-Reihenfolge der übrigen Seite bleibt davon unberührt.
 statt des Mikrofon-Knopfs ein sichtbarer Hinweistext unter dem Eingabefeld.
 Das Widget selbst bleibt in jedem Fall vollständig bedienbar - die
 Spracheingabe ist immer nur eine Ergänzung zur Texteingabe.
+
+## Darstellung, Farben und Kontrast
+
+### Dunkelmodus
+
+Seit dem 18.08.2026 folgt das Widget der Betriebssystem-Einstellung für eine
+dunkle Darstellung. Technisch steckt dahinter die CSS-Regel
+`@media (prefers-color-scheme: dark)`: Der Browser teilt der Seite mit, ob
+die besuchende Person systemweit ein helles oder ein dunkles Erscheinungsbild
+eingestellt hat, und das Widget tauscht daraufhin seine Farben aus.
+
+Das ist mehr als Kosmetik. Für Menschen mit Migräne, Lichtempfindlichkeit
+(Photophobie) und manchen Sehbeeinträchtigungen ist eine helle Fläche auf
+einer sonst dunklen Seite eine echte Belastung. **Kein WCAG-Kriterium
+verlangt einen Dunkelmodus** - er ist eine Maßnahme, die über die Zielnorm
+hinausgeht.
+
+### Wie eine Betreiberin oder ein Betreiber das prüft
+
+Man muss dafür nicht die eigene Betriebssystem-Einstellung umstellen:
+
+- **Chrome/Edge:** `F12` öffnet die Entwicklerwerkzeuge, dann `Strg+Umschalt+P`
+  (Befehlspalette), dort "Show Rendering" eingeben und auswählen. Im
+  erscheinenden Rendering-Bereich "Emulate CSS media feature
+  prefers-color-scheme" auf `dark` stellen.
+- **Firefox:** `F12` öffnet die Entwicklerwerkzeuge, dann den Reiter
+  "Inspector" (Inspektor) wählen. Im Bereich "Rules" (Regeln) findet sich in
+  der Werkzeugleiste ein Mond-Symbol zum Umschalten.
+
+### Eine Besonderheit, die Betreiber kennen sollten
+
+Moderne Browser werten `prefers-color-scheme` nicht isoliert aus, sondern
+gegen die CSS-Eigenschaft `color-scheme` des Wurzelelements (`:root`, in der
+Regel also das `<html>`-Element) der jeweiligen Seite. Legt eine Website
+`:root { color-scheme: light }` fest, bleibt das Widget auch bei dunkel
+eingestelltem Betriebssystem hell. Das ist **beabsichtigt** - das Widget
+passt sich dann an die restliche Seite an -, überrascht aber leicht, wenn
+man es nicht weiß. Deshalb steht es hier.
+
+### Erzwungener Kontrastmodus (Windows High Contrast)
+
+Windows kennt eine Einstellung, die sämtliche Farben einer Website durch eine
+feste, vom Nutzer selbst gewählte Farbpalette ersetzt (in CSS als
+`forced-colors: active` erkennbar). Die Bedienelemente des Widgets bleiben
+dort trotzdem als Bedienelemente erkennbar, weil das CSS für sie eigene
+Rahmen mit Systemfarben vorsieht, die dieser Modus nicht überschreibt.
+
+### Wo die Farben stehen und wie man sie überschreibt
+
+Alle Farben des Widgets sind als 14 Farbmarken ("CSS Custom Properties" -
+selbst benannte CSS-Variablen, die an einer Stelle definiert und im Rest der
+Datei nur noch gelesen werden) auf der Klasse `.acb-widget` in
+`Resources/Public/Css/chatbot.css` hinterlegt. Bewusst auf `.acb-widget` und
+**nicht** auf `:root`: So kann fremdes CSS der Website nicht ungewollt in das
+Widget hineinwirken, und die Werte des Widgets wirken nicht ungewollt auf die
+restliche Seite hinaus.
+
+Wer die Farben des Widgets an das eigene Erscheinungsbild anpassen möchte,
+überschreibt dafür eine oder mehrere dieser Farbmarken im eigenen CSS der
+Website, zum Beispiel:
+
+```css
+.acb-widget {
+    --acb-accent: #0a5c36;
+}
+```
+
+**Wichtiger Hinweis:** Jede geänderte Farbe muss weiterhin ein
+Kontrastverhältnis von mindestens 4,5:1 für Text und mindestens 3:1 für
+Bedienelemente und Rahmen einhalten - sonst wird die Barrierefreiheit der
+Extension durch diese Anpassung wieder zunichtegemacht. Die geprüften
+Ausgangswerte und ihre Kontrastverhältnisse stehen im Dateikopf von
+`chatbot.css`.
+
+### Was niemals umgefärbt werden darf: der Fokusindikator
+
+Der Fokusindikator - der sichtbare Ring, der zeigt, welches Bedienelement
+gerade den Tastaturfokus hat - besteht aus einer fast schwarzen Linie
+innerhalb eines weißen Rings. Beide Farben liegen 17,2:1 auseinander, also
+weit über jeder geforderten Mindestgrenze. Dadurch bleibt der Ring auf
+praktisch jedem denkbaren Seitenhintergrund sichtbar, hell oder dunkel. Ein
+eigenes Farbschema für den Fokusindikator würde genau diese Eigenschaft
+zerstören - deshalb ist er bewusst von den 14 Farbmarken ausgenommen und
+ändert sich auch im Dunkelmodus nicht.
+
+Eine ausführlichere Einordnung des aktuellen Barrierefreiheits-Stands (ohne
+Konformitätsaussage, siehe Einleitung oben) steht in
+[`Documentation/A11y-Selbstbewertung.md`](Documentation/A11y-Selbstbewertung.md)
+und [`Documentation/A11y-Checklist.md`](Documentation/A11y-Checklist.md).
+
+## Auffindbarkeit für KI-Systeme (GEO)
+
+GEO ("Generative Engine Optimization") bezeichnet Maßnahmen, die eine
+Website für KI-Antwortmaschinen wie ChatGPT, Claude, Perplexity oder die
+KI-Übersichten von Google nutzbar und zitierfähig machen. Für diese
+Extension ist das kein Nebenschauplatz: **Dieselbe Inhaltsstruktur, die eine
+Seite für solche KI-Systeme zitierfähig macht, macht sie auch für diesen
+Chatbot besser auffindbar** - der Bot arbeitet beim Beantworten von Fragen
+auf demselben extrahierten Text, den auch fremde KI-Systeme lesen würden.
+
+Folgendes verbessert die Antwortqualität des Chatbots unmittelbar und ist
+deshalb allen Betreiberinnen und Betreibern empfohlen:
+
+- **Genau eine `<h1>` je Seite** sowie eine saubere Gliederung mit `h2`/`h3`
+  ohne übersprungene Ebenen.
+- **Antwort zuerst:** Der erste Absatz nach einer Überschrift sollte diese
+  bereits in etwa 40 bis 70 gut verständlichen Wörtern beantworten - Details
+  folgen danach.
+- **Fragen als Überschriften formulieren** (zum Beispiel „Wann haben wir
+  geöffnet?") - so treffen sie die Formulierungen, mit denen Besucherinnen
+  und Besucher den Chatbot tatsächlich fragen.
+- **Echte Listen und Tabellen** verwenden statt Text, der Aufzählungen nur
+  optisch durch Zeilenumbrüche nachahmt.
+- **Seiten-Kurzbeschreibung ("Abstract") und Schlagwörter ("Keywords") in den
+  Seiteneigenschaften pflegen.** Der Chatbot gewichtet diese beiden Felder
+  bei der Trefferauswahl deutlich stärker als den Fließtext (Schlagwörter
+  vierfach, Kurzbeschreibung dreifach) - gut gepflegte Felder verbessern die
+  Trefferqualität spürbar.
+- **Ein Thema je Seite.**
+
+Nicht Aufgabe dieser Extension sind `robots.txt`, `llms.txt`,
+Sitemap-Konfiguration und strukturierte Daten (Schema.org) für Organisation
+und Website - das gehört ins Site-Package beziehungsweise in die
+Site-Konfiguration der jeweiligen Website, nicht in eine Feature-Extension
+wie diese.
 
 ## Navigation zu einer Seite
 
@@ -449,6 +602,14 @@ Maintenance, **Analyze Database Structure** ausführen und die vorgeschlagenen
 Änderungen übernehmen. Dabei entstehen die beiden Tabellen
 `cache_accessible_chatbot_ratelimit` und `cache_accessible_chatbot_ratelimit_tags`.
 
+Seit dem 17.08.2026 gibt es zusätzlich einen zweiten, ebenfalls
+datenbankgestützten Cache für die Seitenliste im Hintergrund (Sitemap-Kompakt,
+siehe Abschnitt „Inhaltsindex"). Dabei entstehen zwei weitere Tabellen:
+`cache_accessible_chatbot_sitemap` und `cache_accessible_chatbot_sitemap_tags`.
+Auch diese beiden entstehen automatisch bei **Analyze Database Structure** -
+ein zusätzlicher Schritt ist dafür nicht nötig, wohl aber derselbe Schritt wie
+oben.
+
 **Hinter einem Reverse Proxy oder Loadbalancer:** Ohne die Einstellung
 `[SYS][reverseProxyIP]` sieht TYPO3 nur die IP des Proxys - dann teilen sich
 alle Besucher ein einziges Kontingent. Diese Einstellung gehört in die
@@ -482,7 +643,16 @@ zwar genau so, wie ein **anonymer Besucher** die Website sieht.
 
 TYPO3-Backend, dann Admin Tools, Maintenance, **Analyze Database Structure**
 ausführen und die vorgeschlagenen Änderungen übernehmen. Dabei entsteht die
-Tabelle `tx_accessiblechatbot_index`.
+Tabelle `tx_accessiblechatbot_index` sowie, für den Sitemap-Cache aus dem
+Abschnitt „Schutz vor Missbrauch (Rate-Limits)", die beiden Tabellen
+`cache_accessible_chatbot_sitemap` und `cache_accessible_chatbot_sitemap_tags`.
+
+**Wichtig, falls die zweite Tabelle fehlt:** Fehlt ausgerechnet
+`cache_accessible_chatbot_sitemap_tags`, schlägt die Indexierung anschließend
+mit einer verwirrenden, auf den ersten Blick völlig unzusammenhängenden
+Datenbank-Fehlermeldung fehl - die eigentliche Ursache ist dann fast immer die
+fehlende Tabelle, nicht das, was die Meldung vermuten lässt. **Analyze
+Database Structure** ausführen behebt das.
 
 ### Index aufbauen
 
@@ -601,12 +771,55 @@ anonymer Besucher auf dieser Seite auch selbst sehen könnte.
 Die automatische Aktualisierung nutzt die klassischen DataHandler-Hooks
 `processDatamapClass` und `processCmdmapClass`. In TYPO3 13.4 gibt es für
 diese beiden Zeitpunkte nachweislich kein PSR-14-Event; die Hooks sind der
-einzige Weg. Nach Stand des v14-Changelogs sind beide Hooks dort unverändert
-vorhanden - es gibt keinen Breaking- oder Deprecation-Eintrag dazu. Das ist
-noch keine endgültige Bestätigung: in Phase 9 (Kompatibilität) wird das an
-einer echten v14-Installation überprüft. Die Registrierung steht deshalb
-bewusst an genau einer Stelle (`ext_localconf.php`) und ist dort leicht
-austauschbar.
+einzige Weg. Am 18.08.2026 wurde das gegen eine echte TYPO3-14.3.4-Installation
+geprüft: Im v14-Changelog fand sich kein Breaking- oder
+Deprecation-Eintrag, der diese Hooks entfernt, und die Aufrufstellen dafür
+sind im Kern weiterhin vorhanden. Das ist eine gute Prognose, aber **noch
+kein endgültiger Beweis auf einer laufenden v14-Installation** - dieser
+Nachweis bleibt Aufgabe von Phase 9 (Kompatibilität). Die Registrierung steht
+deshalb bewusst an genau einer Stelle (`ext_localconf.php`) und ist dort
+leicht austauschbar.
+
+**Eine echte v14-Unverträglichkeit wurde am selben Tag gefunden und
+behoben:** Spätestens ab TYPO3 14.3 liefert der TypoScript-Datentyp
+`getIndpEnv:TYPO3_SITE_PATH` keinen Wert mehr, sondern `null`. Der TYPO3-Kern
+löst diesen Zweig über eine feste Liste erlaubter Namen auf, und
+`TYPO3_SITE_PATH` steht in dieser Liste nicht mehr (geprüft in
+`ContentObjectRenderer.php` der Version 14.3.4; die genaue Version, ab der
+`TYPO3_SITE_PATH` verschwindet, ist damit nicht abschließend belegt, TYPO3
+13.4.33 löst den Wert jedenfalls noch auf). Der zugehörige Kern-Umbau ist als
+Deprecation #109551 verzeichnet.
+
+Als erster Fix wurde deshalb noch am selben Tag auf
+`getIndpEnv:TYPO3_SITE_URL` umgestellt. Bei genauerem Hinsehen erwies sich
+auch das noch am selben Tag als falsch: `TYPO3_SITE_URL` liefert die Basis-
+Adresse der **TYPO3-Installation** (den Ort, an dem das Skript aufgerufen
+wird), nicht die Basis-Adresse der **Site** oder gar der aktuellen
+**Sprache**. Das bricht in zwei Fällen:
+
+- Hat auf einer Website **jede Sprache** einen eigenen Pfad-Anteil (zum
+  Beispiel `/de/` und `/en/`) und liegt auf `/` selbst nichts, weist TYPO3
+  die Anfrage schon **vor** dieser Extension mit HTTP 404 ab - im
+  TYPO3-Log erscheint dazu **nichts**, weil die eigene Middleware in diesem
+  Fall gar nicht erst erreicht wird.
+- Betreibt eine Installation mehrere Websites über getrennte Pfade
+  (**pfadbasiertes Multi-Site**, zum Beispiel `/` und `/shop/`), zeigt
+  `TYPO3_SITE_URL` immer auf die **erste** Website - der Chat-Endpunkt hätte
+  dann ständig die Einstellungen und den Inhaltsindex der falschen Website
+  benutzt.
+
+Die Extension verwendet deshalb inzwischen `siteLanguage:base` - die
+Basis-Adresse der **aktuellen Sprache der aktuellen Site**, wie TYPO3 sie in
+der Site-Konfiguration selbst führt. Das JavaScript entnimmt daraus weiterhin
+nur den Pfad-Anteil und baut Schema und Host stets aus der tatsächlich
+aufgerufenen Seite (siehe `Configuration/TypoScript/Widget.typoscript` und
+`Resources/Public/JavaScript/chatbot.js`).
+
+**Ehrlicher Stand:** Dieser Fix wurde am 18.08.2026 gegen die geprüften
+Kernquellen von TYPO3 13.4.33 und 14.3.4 hergeleitet, aber noch **nicht**
+gegen eine laufende TYPO3-14-Installation ausprobiert. Dieser Nachweis auf
+einer echten v14-Installation bleibt - wie beim DataHandler-Hook oben -
+Aufgabe von Phase 9 (Kompatibilität).
 
 ## Datenschutz - Textbaustein für die Datenschutzerklärung
 
@@ -649,12 +862,12 @@ und Betreiber sind für die Prüfung selbst verantwortlich.
 
 | Beobachtung | Ursache und Abhilfe |
 | --- | --- |
-| "Der Assistent ist noch nicht eingerichtet." | Kein API-Key gesetzt, Key ungültig (HTTP 401/403) oder ein anderer `provider` als `gemini` eingetragen. |
+| "Der Assistent ist noch nicht eingerichtet." | Meist fehlt der Site das Site Set "Barrierefreier Chatbot" (siehe "Wichtig bei Weg B"), oder der Schalter "Chatbot aktivieren" in den Site Settings ist ausgeschaltet - der Server kennt die Einstellung dann gar nicht und lehnt sicherheitshalber jede Anfrage ab. Seltener: kein API-Key gesetzt, Key ungültig (HTTP 401/403) oder ein anderer `provider` als `gemini` eingetragen. |
 | Meldung "nicht erreichbar", im Log steht `HTTP status 404` | Der eingestellte Modellname existiert nicht (mehr) oder ist für neue Zugänge gesperrt. Siehe "Hinweis zum Modellnamen". |
 | Jede Nachricht endet mit "nicht erreichbar" | Admin Tools, Maintenance, Analyze Database Structure ausführen (Cache-Tabellen fehlen). Danach Admin Tools, Log prüfen. |
 | Im Browser erscheint ein CSP-Fehler | Ist eine Content Security Policy aktiv, muss `connect-src` mindestens `'self'` erlauben. |
 | Antwort dauert und bricht dann ab | Der Server hält insgesamt höchstens 30 Sekunden durch, auch wenn er die Anfrage zwischendurch wiederholen muss. Der Browser bricht nach 35 Sekunden ab. |
-| Chat antwortet immer mit "Diese Anfrage war nicht erlaubt. Bitte die Seite neu laden und es noch einmal versuchen." | Site Set "Barrierefreier Chatbot" ist der Site nicht zugewiesen (siehe "Wichtig bei Weg B") - oder der Schalter "Chatbot aktivieren" in den Site Settings ist ausgeschaltet. |
+| Chat antwortet immer mit "Diese Anfrage war nicht erlaubt. Bitte die Seite neu laden und es noch einmal versuchen." | Der Browser hat beim Absenden der Anfrage keinen zur Website passenden `Origin`- oder `Referer`-Header mitgeschickt, und der Server lehnt die Anfrage deshalb als möglicherweise fremd ab (Schutz vor Missbrauch durch andere Websites). Typische Ursachen: eine Anfrage von einer anderen Domain (Cross-Origin), eine aggressive Datenschutz-Erweiterung im Browser, die diese Header entfernt, oder ein Reverse Proxy/Loadbalancer davor, der sie entfernt oder verändert. |
 | `accessible-chatbot:index` meldet "Table 'tx_accessiblechatbot_index' doesn't exist" | Admin Tools, Maintenance, **Analyze Database Structure** ausführen. |
 | Der Befehl meldet "Es ist keine Website konfiguriert" | Unter Site Management, Sites muss mindestens eine Website mit Startseite angelegt sein. |
 | Eine versteckte Seite steht trotzdem im Index | Erst prüfen, ob es wirklich dieselbe Seite ist (Übersetzungen sind eigene Datensätze). Dann `accessible-chatbot:index` erneut ausführen und Admin Tools, Log prüfen. |

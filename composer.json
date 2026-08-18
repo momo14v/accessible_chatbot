@@ -1,7 +1,7 @@
 {
 	"name": "extension14v/accessible-chatbot",
 	"description": "Barrierefreier Chatbot für TYPO3: beantwortet Fragen ausschließlich aus sichtbaren Website-Inhalten und navigiert Nutzer auf Wunsch. Entwicklung orientiert an WCAG 2.2 AA; keine Konformitätsaussage.",
-	"version": "0.6.0",
+	"version": "0.8.0",
 	"type": "typo3-cms-extension",
 	"license": "proprietary",
 	"authors": [

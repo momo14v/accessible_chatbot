@@ -71,7 +71,22 @@ final class ConfigurationProvider
 
     private static function fromEnvironment(string $name): string
     {
+        // getenv() findet nicht auf jedem FPM/SAPI-Aufbau etwas - manche
+        // Konfigurationen fuellen nur $_ENV bzw. $_SERVER. Deshalb hier eine
+        // Rueckfallkette: der erste TREFFER (nicht-leerer String) gewinnt,
+        // die Reihenfolge selbst aendert nichts an der bestehenden
+        // Rangfolge "Umgebung vor Extension-Konfiguration" in load().
         $value = getenv($name);
+        if (is_string($value) && trim($value) !== '') {
+            return trim($value);
+        }
+
+        $value = $_ENV[$name] ?? null;
+        if (is_string($value) && trim($value) !== '') {
+            return trim($value);
+        }
+
+        $value = $_SERVER[$name] ?? null;
 
         return is_string($value) ? trim($value) : '';
     }
